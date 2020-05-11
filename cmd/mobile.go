@@ -11,8 +11,9 @@ import "io"
 
 func main() {
 	//处理传入参数
-	ip   := flag.String("ip", "127.0.0.1", "代理服务器IP地址")
-	port := flag.Int("port", 8888, "代理服务器端口")
+	ip    := flag.String("ip", "127.0.0.1", "代理服务器IP地址")
+	port  := flag.Int("port", 8888, "代理服务器端口")
+	debug := flag.Bool("debug", false, "调试模式")
 	flag.Parse()
 
 	if flag.NFlag() < 2 {
@@ -45,8 +46,11 @@ func main() {
 	method, _ := reader.ReadByte()
 	Log("响应method：", method)
 
-	//heartbeat(conn)
-	wait(conn)
+	if *debug {
+		heartbeat(conn)
+	} else {
+		wait(conn)
+	}
 }
 
 func wait(conn net.Conn) {
