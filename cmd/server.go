@@ -81,8 +81,6 @@ func handle_customer(conn net.Conn) {
 		close(conn)
 		return
 	}
-
-
 /*
 	live := check(device)
 	if live == false {
@@ -121,7 +119,9 @@ func CopyUserToMobile(input, output net.Conn) (err error) {
 	}
 
 	Log("设备连接释放")
-	pool.Put(output)
+	close(output)
+	//output.SetDeadline(time.Now().Add(-time.Second))
+	//pool.Put(output)
 
 	return
 }
