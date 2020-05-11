@@ -8,11 +8,29 @@ import "io"
 import "time"
 import "proxy"
 import "runtime"
+import "flag"
 
 
 var pool proxy.TcpPool
+var mport string
+var cport string
+var debug bool
 
 func main() {
+	//处理传入参数
+	mp := flag.String("mport", "8888", "设备连接端口")
+	cp := flag.String("cport", "9999", "用户连接端口")
+	de := flag.Bool("debug", false, "调试模式")
+	flag.Parse()
+
+	mport = *mp
+	cport = *cp
+	debug = *de
+
+    Log("设备端口：", mport)
+    Log("用户端口", cport)
+    Log("调试模式：", debug)
+
 	runtime.GOMAXPROCS(4)
 
 	pool = proxy.TcpPool{}
@@ -24,7 +42,8 @@ func main() {
 
 //用户端
 func listen_customer() {
-    addr := "0.0.0.0:9999"
+    addr := "0.0.0.0:"+cport
+
     tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
 
     if err != nil {
@@ -177,7 +196,8 @@ func check(conn net.Conn) bool {
 
 //设备端
 func listen_mobile() {
-    addr := "0.0.0.0:8888"
+    addr := "0.0.0.0:"+mport
+
     tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
 
     if err != nil {
@@ -229,7 +249,9 @@ func handle_mobile(conn net.Conn) {
 
 	Log("设备连接数：", pool.Len())
 
-	//go heartbeat(conn)
+	if debug == true {
+		go heartbeat(conn)
+	}
 }
 
 /*
