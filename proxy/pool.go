@@ -2,6 +2,9 @@ package proxy
 
 import "net"
 import "errors"
+import "sync"
+
+var locker sync.Mutex
 
 type TcpPool struct {
 	pool chan net.Conn
@@ -21,8 +24,10 @@ func (this *TcpPool) Get() (conn net.Conn, err error) {
 		return
 	}
 
+	locker.Lock()
 	conn = <-this.pool
 	this.count--
+	locker.Unlock()
 	return
 }
 
@@ -32,8 +37,10 @@ func (this *TcpPool) Put(conn net.Conn) (res bool, err error) {
 		return
 	}
 
+	locker.Lock()
 	this.pool<- conn
 	this.count++
+	locker.Unlock()
 	return true, nil
 }
 
