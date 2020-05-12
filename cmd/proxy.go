@@ -9,12 +9,15 @@ import "time"
 import "proxy"
 import "runtime"
 import "flag"
+import "syscall"
+import "errors"
 
 
 var pool proxy.TcpPool
 var mport string
 var cport string
 var debug bool
+var device net.Conn
 
 func main() {
 	//处理传入参数
@@ -94,20 +97,25 @@ func handle_customer(conn net.Conn) {
 	Log("用户连接：", conn.RemoteAddr().String())
 
 	//先读取设备连接
-	device, err := pool.Get()
-	if err != nil {
-		Log("没有可用设备")
-		close(conn)
-		return
+	for {
+
+		device, err := pool.Get()
+		if err != nil {
+			Log("没有可用设备")
+			close(conn)
+			return
+		}
+
+		live := check(device)
+		if live != nil {
+			Log("选定设备已断开")
+			close(conn)
+			continue
+		}
+
+		break
 	}
-/*
-	live := check(device)
-	if live == false {
-		Log("选定设备已断开")
-		close(conn)
-		return
-	}
-*/
+
 	Log("连接设备：", device.RemoteAddr().String())
 
 	//向设备转发原始请求
@@ -167,27 +175,39 @@ func CopyMobileToUser(input, output net.Conn) (err error) {
 	}
 	return
 }
+var errUnexpectedRead = errors.New("unexpected read from socket")
+func check(conn net.Conn) error {
+	var sysErr error
 
-func check(conn net.Conn) bool {
-
-	buf := make([]byte, 1)
-
-	count, err := conn.Read(buf)
+	sysConn, ok := conn.(syscall.Conn)
+	if !ok {
+		return nil
+	}
+	rawConn, err := sysConn.SyscallConn()
 	if err != nil {
-		if err == io.EOF && count > 0 {
-			Log(buf[:count])
-		}
-
-		if err == io.EOF && count == 0 {
-			Log("对方连接关闭")
-		}
-
-		close(conn)
-
-		return false
+		return err
 	}
 
-	return true
+	err = rawConn.Read(func(fd uintptr) bool {
+		var buf [1]byte
+		n, err := syscall.Read(int(fd), buf[:])
+		switch {
+		case n == 0 && err == nil:
+			sysErr = io.EOF
+		case n > 0:
+			sysErr = errUnexpectedRead
+		case err == syscall.EAGAIN || err == syscall.EWOULDBLOCK:
+			sysErr = nil
+		default:
+			sysErr = err
+		}
+		return true
+	})
+	if err != nil {
+		return err
+	}
+
+	return sysErr
 }
 
 
