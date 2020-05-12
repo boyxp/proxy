@@ -324,7 +324,7 @@ func heartbeat(conn net.Conn) (err error) {
 }
 
 func close(conn net.Conn) {
-	Log("连接关闭：", conn.RemoteAddr().String(), time.Now().Format("2006-01-02 15:04:05"), "close\n")
+	Log("连接关闭：", conn.RemoteAddr().String(), "设备连接数：", pool.Len(), "时间：", time.Now().Format("2006-01-02 15:04:05"), "close\n")
 	conn.Close()
 }
 
