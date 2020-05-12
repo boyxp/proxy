@@ -98,8 +98,8 @@ func handle_customer(conn net.Conn) {
 
 	//先读取设备连接
 	for {
-
-		device, err := pool.Get()
+		var err error
+		device, err = pool.Get()
 		if err != nil {
 			Log("没有可用设备")
 			close(conn)
@@ -109,7 +109,7 @@ func handle_customer(conn net.Conn) {
 		live := check(device)
 		if live != nil {
 			Log("选定设备已断开")
-			close(device)
+			//close(device)
 			continue
 		}
 
