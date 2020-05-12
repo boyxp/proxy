@@ -109,7 +109,7 @@ func handle_customer(conn net.Conn) {
 		live := check(device)
 		if live != nil {
 			Log("选定设备已断开")
-			close(conn)
+			close(device)
 			continue
 		}
 
