@@ -37,7 +37,7 @@ func main() {
 	runtime.GOMAXPROCS(4)
 
 	pool = proxy.TcpPool{}
-	pool.Init(100)
+	pool.Init(500)
 
 	go listen_mobile()
 	listen_customer()
@@ -135,7 +135,7 @@ func CopyUserToMobile(input, output net.Conn) (err error) {
 			}
 
 			if err == io.EOF  && count == 0 {
-				Log("用户主动断开")
+				Log("同步中用户主动断开")
 			}
 
 			break
@@ -164,7 +164,7 @@ func CopyMobileToUser(input, output net.Conn) (err error) {
 			}
 
 			if err == io.EOF  && count == 0 {
-				Log("设备主动断开")
+				Log("同步中设备主动断开")
 			}
 
 			break
