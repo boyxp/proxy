@@ -34,7 +34,7 @@ func main() {
 	}
 
 	//写入握手包
-	req := []byte{5, 0, 0}
+	req := []byte{5, 1, 0}
 	conn.Write(req)
 
 	//读取响应
@@ -101,7 +101,7 @@ func heartbeat(conn net.Conn) {
 		if count > 0 {
 			if count==4 {
 				Log("心跳响应：", i, string(buf[:count]))
-				time.Sleep(5*time.Second)
+				time.Sleep(1*time.Second)
 			} else {
 				Log("用户请求：", string(buf[:count]))
 				conn.Write([]byte("recv"))
