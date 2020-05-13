@@ -67,7 +67,6 @@ func listen_customer() {
 			continue
 		}
 
-		//conn.SetReadDeadline(time.Now().Add(time.Duration(200)*time.Second))
 		conn.SetKeepAlive(true)
 		conn.SetKeepAlivePeriod(5*time.Second)
 
@@ -77,38 +76,33 @@ func listen_customer() {
 
 func handle_customer(conn net.Conn) {
 
-	Log("请求时间：", time.Now().Format("2006-01-02 15:04:05"))
+	Log("用户-请求时间：", time.Now().Format("2006-01-02 15:04:05"))
 
-	reader := bufio.NewReader(conn)
-
-	ver, _ := reader.ReadByte()
-	Log("版本：", ver)
-
+	reader      := bufio.NewReader(conn)
+	version, _  := reader.ReadByte()
 	nmethods, _ := reader.ReadByte()
-	Log("nmethods：", nmethods)
-
-	methods := make([]byte,nmethods)
+	methods     := make([]byte,nmethods)
 	io.ReadFull(reader, methods)
-	Log("methods：", methods)
 
-	res := []byte{5, 0}
-	conn.Write(res)
+	conn.Write([]byte{5, 0})
 
-	Log("用户连接：", conn.RemoteAddr().String())
+	Log("用户-连接信息：版本=", version, "nmethods=", nmethods, "methods=", methods)
+
+	Log("用户-连接地址：", conn.RemoteAddr().String())
 
 	//先读取设备连接
 	for {
 		var err error
 		device, err = pool.Get()
 		if err != nil {
-			Log("没有可用设备")
+			Log("用户-没有可用设备")
 			close(conn)
 			return
 		}
 
-		live := check(device)
+		live := checkLive(device)
 		if live != nil {
-			Log("选定设备已断开")
+			Log("用户-选定设备已断开")
 			close(device)
 			continue
 		}
@@ -116,7 +110,7 @@ func handle_customer(conn net.Conn) {
 		break
 	}
 
-	Log("连接设备：", device.RemoteAddr().String())
+	Log("用户-连接设备：", device.RemoteAddr().String())
 
 	//向设备转发原始请求
 	defer conn.Close()
@@ -135,20 +129,22 @@ func CopyUserToMobile(input, output net.Conn) (err error) {
 			}
 
 			if err == io.EOF  && count == 0 {
-				Log("同步中用户主动断开")
+				Log("用户主动断开")
 			}
 
 			break
 		}
+
 		if count > 0 {
-			output.Write(buf[:count])
+			_, err := output.Write(buf[:count])
+			if err != nil {
+				Log("设备被动断开")
+			}
 		}
 	}
 
-	Log("设备连接释放")
+	Log("设备连接断开")
 	close(output)
-	//output.SetDeadline(time.Now().Add(-time.Second))
-	//pool.Put(output)
 
 	return
 }
@@ -164,19 +160,29 @@ func CopyMobileToUser(input, output net.Conn) (err error) {
 			}
 
 			if err == io.EOF  && count == 0 {
-				Log("同步中设备主动断开")
+				Log("设备主动断开")
 			}
 
 			break
 		}
+
 		if count > 0 {
-			output.Write(buf[:count])
+			_, err := output.Write(buf[:count])
+			if err != nil {
+				Log("用户被动断开")
+			}
 		}
 	}
+
+	Log("用户连接断开")
+	close(output)
+
 	return
 }
+
+//检查连接是否可用
 var errUnexpectedRead = errors.New("unexpected read from socket")
-func check(conn net.Conn) error {
+func checkLive(conn net.Conn) error {
 	var sysErr error
 
 	sysConn, ok := conn.(syscall.Conn)
@@ -238,7 +244,6 @@ func listen_mobile() {
 			continue
 		}
 
-		//conn.SetReadDeadline(time.Now().Add(time.Duration(200)*time.Second))
 		conn.SetKeepAlive(true)
 		conn.SetKeepAlivePeriod(5*time.Second)
 
@@ -250,51 +255,25 @@ func handle_mobile(conn net.Conn) {
 
 	Log("设备-请求时间：", time.Now().Format("2006-01-02 15:04:05"))
 
-	reader := bufio.NewReader(conn)
-
-	ver, _ := reader.ReadByte()
-	Log("设备-版本：", ver)
-
+	reader      := bufio.NewReader(conn)
+	version, _  := reader.ReadByte()
 	nmethods, _ := reader.ReadByte()
-	Log("设备-nmethods：", nmethods)
-
-	methods := make([]byte,nmethods)
+	methods     := make([]byte,nmethods)
 	io.ReadFull(reader, methods)
-	Log("设备-methods：", methods)
 
-	res := []byte{5, 0}
-	conn.Write(res)
+	Log("设备-连接信息：版本=", version, "nmethods=", nmethods, "methods=", methods)
+
+	conn.Write([]byte{5, 0})
 
 	pool.Put(conn)
 
-	Log("设备连接数：", pool.Len())
+	Log("设备-连接地址：", conn.RemoteAddr().String())
+	Log("设备-总连接数：", pool.Len())
 
 	if debug == true {
 		go heartbeat(conn)
 	}
 }
-
-/*
-开启心跳：循环读取，并相应，判断停止标志并退出
-停止心跳：写入ready命令，等待ok回应后标记停止心跳，开始拷贝数据
-拷贝数据：期间服务器停止接收心跳，单纯转发
-
-
-设备类
-	心跳监测 {
-		读取，检测断开则踢出连接池
-	}
-
-	拷贝数据 {
-		go 用户到设备
-		go 设备到用户
-	}
-
-	释放设备 {
-		开启心跳
-		放入连接池
-	}
-*/
 
 func heartbeat(conn net.Conn) (err error) {
 	defer close(conn)
