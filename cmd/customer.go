@@ -65,7 +65,7 @@ func query(conn net.Conn) {
 			}
 
 			if err == io.EOF  && count == 0 {
-				Log("对方连接关闭")
+				Log("设备连接关闭")
 			}
 
 			break

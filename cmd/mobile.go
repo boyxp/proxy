@@ -65,7 +65,7 @@ func wait(conn net.Conn) {
 			}
 
 			if err == io.EOF  && count == 0 {
-				Log("对方连接关闭")
+				Log("用户连接关闭")
 			}
 
 			break
@@ -92,7 +92,7 @@ func heartbeat(conn net.Conn) {
 			}
 
 			if err == io.EOF  && count == 0 {
-				Log("对方连接关闭")
+				Log("用户连接关闭")
 			}
 
 			break
