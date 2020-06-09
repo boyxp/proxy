@@ -11,6 +11,9 @@ import "runtime"
 import "flag"
 import "syscall"
 import "errors"
+import "net/http"
+import "encoding/json"
+
 
 
 var pool proxy.TcpPool
@@ -39,43 +42,97 @@ func main() {
 
 	pool = proxy.TcpPool{}
 	pool.Init(500)
-
 	go listen_mobile()
-	listen_customer()
+
+	http.Handle("/", &httpHandler{})
+    http.ListenAndServe(":8080", nil)
 }
 
-//用户端
-func listen_customer() {
-    addr := "0.0.0.0:"+cport
+type httpHandler struct{}
+type Resp struct {
+	Errno int `json:"errno"`
+	Msg  string `json:"msg"`
+	Port int `json:"port"`
+}
 
+func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Body == nil {
+            http.Error(w, "Please send a request body", 400)
+            return
+    }
+
+	formData := make(map[string]interface{})
+   // 调用json包的解析，解析请求body
+   	json.NewDecoder(r.Body).Decode(&formData)
+
+   	if _, ok := formData["data"]; !ok {
+   		w.Write([]byte("json error"))
+   		return
+   	}
+
+   	data := formData["data"].(map[string]interface{})
+   	if _, ok := data["token"]; !ok {
+   		w.Write([]byte("json error"))
+   		return
+   	}
+
+   	token  := data["token"].(string)
+   	userId := data["userId"].(string)
+
+    addr := "0.0.0.0:0"
     tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
-
     if err != nil {
         log.Fatalf("net.ResovleTCPAddr fail:%s", addr)
     }
-
-
 	listener, err := net.ListenTCP("tcp", tcpAddr)
 	if err != nil {
 		log.Fatalf("listen %s fail: %s", addr, err)
 		return
 	}
 
-	for {
-		conn,err := listener.AcceptTCP()
-		if err != nil {
-			log.Fatal(err)
-			continue
+	lport := listener.Addr().(*net.TCPAddr).Port
+
+	quit := make(chan int)
+
+	go listen_customer(listener, quit, token)
+
+	fmt.Println("litsen:", lport)
+
+	res := Resp{Errno:200, Msg:"Success", Port:lport}
+
+	jsonr, err := json.Marshal(&res)
+    if err != nil {
+        return
+    }
+
+	fmt.Println(token)
+	fmt.Println(userId)
+	w.Write(jsonr)
+}
+
+//用户端
+func listen_customer(listener *net.TCPListener, quit chan int, token string) {
+	for{
+		select {
+			case <-quit:
+						fmt.Println("exit")
+						return;
+			default    :
+						conn,err := listener.AcceptTCP()
+						if err != nil {
+							log.Fatal(err)
+							continue
+						}
+
+						conn.SetKeepAlive(true)
+						conn.SetKeepAlivePeriod(5*time.Second)
+
+						go handle_customer(conn, quit, token)
 		}
-
-		conn.SetKeepAlive(true)
-		conn.SetKeepAlivePeriod(5*time.Second)
-
-		go handle_customer(conn)
 	}
 }
 
-func handle_customer(conn net.Conn) {
+func handle_customer(conn net.Conn, quit chan int, token string) {
 
 	Log("用户-请求时间：", time.Now().Format("2006-01-02 15:04:05"))
 
