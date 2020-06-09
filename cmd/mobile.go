@@ -8,12 +8,12 @@ import "net"
 import "bufio"
 import "time"
 import "io"
-import "crypto/md5"
 
 func main() {
 	//处理传入参数
 	ip    := flag.String("ip", "127.0.0.1", "代理服务器IP地址")
 	port  := flag.Int("port", 8888, "代理服务器端口")
+	token := flag.String("token", "aaaabbbbccccdddd", "设备标识")
 	debug := flag.Bool("debug", false, "调试模式")
 	flag.Parse()
 
@@ -35,15 +35,11 @@ func main() {
 	}
 
 	//写入token
-	qtime := time.Now().Format("2006-01-02 15:04:05")
-	data  := []byte(qtime)
-	hash  := md5.Sum(data)
-	token := fmt.Sprintf("%x", hash)
-	len   := len(token)
+	len   := len(*token)
 
 	req := []byte{1, uint8(len)}
 	conn.Write(req)
-	conn.Write([]byte(token))
+	conn.Write([]byte(*token))
 
 	//读取响应
 	reader := bufio.NewReader(conn)
