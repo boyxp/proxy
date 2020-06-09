@@ -18,6 +18,7 @@ var mport string
 var cport string
 var debug bool
 var device net.Conn
+var devices = make(map[string]net.Conn)
 
 func main() {
 	//处理传入参数
@@ -257,18 +258,20 @@ func handle_mobile(conn net.Conn) {
 
 	reader      := bufio.NewReader(conn)
 	version, _  := reader.ReadByte()
-	nmethods, _ := reader.ReadByte()
-	methods     := make([]byte,nmethods)
-	io.ReadFull(reader, methods)
+	length, _   := reader.ReadByte()
+	auth        := make([]byte, length)
+	io.ReadFull(reader, auth)
+	token := string(auth)
 
-	Log("设备-连接信息：版本=", version, "nmethods=", nmethods, "methods=", methods)
+	Log("设备-连接信息：版本=", version, "len=", length, "token=", token)
 
-	conn.Write([]byte{5, 0})
+	conn.Write([]byte{1, 0})
 
-	pool.Put(conn)
+	devices[token] = conn
+	//pool.Put(conn)
 
 	Log("设备-连接地址：", conn.RemoteAddr().String())
-	Log("设备-总连接数：", pool.Len())
+	Log("设备-总连接数：", len(devices))
 
 	if debug == true {
 		go heartbeat(conn)
