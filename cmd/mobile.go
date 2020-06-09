@@ -8,6 +8,7 @@ import "net"
 import "bufio"
 import "time"
 import "io"
+import "crypto/md5"
 
 func main() {
 	//处理传入参数
@@ -33,9 +34,16 @@ func main() {
 		return
 	}
 
-	//写入握手包
-	req := []byte{5, 1, 0}
+	//写入token
+	qtime := time.Now().Format("2006-01-02 15:04:05")
+	data  := []byte(qtime)
+	hash  := md5.Sum(data)
+	token := fmt.Sprintf("%x", hash)
+	len   := len(token)
+
+	req := []byte{1, uint8(len)}
 	conn.Write(req)
+	conn.Write([]byte(token))
 
 	//读取响应
 	reader := bufio.NewReader(conn)
@@ -43,8 +51,8 @@ func main() {
 	ver, _ := reader.ReadByte()
 	Log("响应版本：", ver)
 
-	method, _ := reader.ReadByte()
-	Log("响应method：", method)
+	status, _ := reader.ReadByte()
+	Log("响应status：", status)
 
 	if *debug {
 		heartbeat(conn)
