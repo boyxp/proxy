@@ -14,6 +14,8 @@ import "proxy"
 import "context"
 import "syscall"
 import "errors"
+import "encoding/base64"
+import "strings"
 
 var Debug bool
 var Devices = make(map[string]proxy.TcpPool)
@@ -38,7 +40,7 @@ func main() {
 	go listenMobile(*devicePort)
 
 	//监听指令请求
-	http.HandleFunc("/command.do", httpHandler)
+	http.HandleFunc("/api.php", httpHandler)
     http.ListenAndServe(":"+*commandPort, nil)
 }
 
@@ -57,16 +59,23 @@ type Resp struct {
 
 //指令处理
 func httpHandler(w http.ResponseWriter, r *http.Request) {
-	//没有请求体直接拒绝
-	if r.Body == nil {
-            http.Error(w, "Please send a request body", 400)
-            return
-    }
+	base := r.PostFormValue("s")
+	if len(base) == 0 {
+		http.Error(w, "Please send a request body", 400)
+		return
+	}
 
+	decode, err := base64.StdEncoding.DecodeString(base)
+    if err != nil {
+        http.Error(w, "error", 400)
+        return
+    }
+    fmt.Println(string(decode))
 
     //解析请求json
+    jr := strings.NewReader(string(decode))
 	query := make(map[string]interface{})
-   	json.NewDecoder(r.Body).Decode(&query)
+   	json.NewDecoder(jr).Decode(&query)
 
    	if _, ok := query["data"]; !ok {
    		http.Error(w, "json error", 400)
