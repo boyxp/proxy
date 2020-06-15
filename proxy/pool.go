@@ -4,12 +4,11 @@ import "net"
 import "errors"
 import "sync"
 
-var locker sync.Mutex
-
 type TcpPool struct {
 	pool chan net.Conn
 	count int
 	max int
+	locker sync.Mutex
 }
 
 func (this *TcpPool) Init(max int) {
@@ -24,10 +23,10 @@ func (this *TcpPool) Get() (conn net.Conn, err error) {
 		return
 	}
 
-	locker.Lock()
+	this.locker.Lock()
 	conn = <-this.pool
 	this.count--
-	locker.Unlock()
+	this.locker.Unlock()
 	return
 }
 
@@ -37,10 +36,10 @@ func (this *TcpPool) Put(conn net.Conn) (res bool, err error) {
 		return
 	}
 
-	locker.Lock()
+	this.locker.Lock()
 	this.pool<- conn
 	this.count++
-	locker.Unlock()
+	this.locker.Unlock()
 	return true, nil
 }
 
