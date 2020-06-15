@@ -11,6 +11,9 @@ import "bufio"
 import "io"
 import "time"
 import "proxy"
+import "context"
+import "syscall"
+import "errors"
 
 var Debug bool
 var Devices = make(map[string]proxy.TcpPool)
@@ -100,11 +103,11 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 	Log("命令：token=", token, "userId=", userId, "port=", port)
 
 
+	//创建上下文
+	ctx, _ := context.WithTimeout(context.Background(), 30*time.Second)
 
 	//启动异步监听
-	//quit := make(chan int)
-
-	//go listen_customer(listener, quit, token)
+	go listenCustomer(ctx, listener, port)
 
 	Users[port] = token
 
@@ -231,6 +234,210 @@ func heartbeat(conn net.Conn) (err error) {
 }
 
 
+
+//用户端连接处理===========================================================================
+//用户监听
+func listenCustomer(ctx context.Context, listener *net.TCPListener, port int) {
+	for{
+		select {
+			case <-ctx.Done():
+						Log("用户监听退出：port=", port)
+						return;
+			default    :
+						conn,err := listener.AcceptTCP()
+						if err != nil {
+							log.Fatal(err)
+							continue
+						}
+
+						conn.SetKeepAlive(true)
+						conn.SetKeepAlivePeriod(5*time.Second)
+
+						go handleCustomer(ctx, conn, port)
+		}
+	}
+}
+
+//用户握手
+func handleCustomer(ctx context.Context, conn net.Conn, port int) {
+
+	Log("用户-请求时间：", time.Now().Format("2006-01-02 15:04:05"))
+
+	reader      := bufio.NewReader(conn)
+	version, _  := reader.ReadByte()
+	nmethods, _ := reader.ReadByte()
+	methods     := make([]byte,nmethods)
+	io.ReadFull(reader, methods)
+
+	conn.Write([]byte{5, 0})
+
+	Log("用户-连接信息：版本=", version, "nmethods=", nmethods, "methods=", methods)
+
+	Log("用户-连接地址：", conn.RemoteAddr().String())
+	Log("用户-监听端口：", port)
+
+	//通过端口映射查找token
+	if _, ok := Users[port];!ok {
+		Log("未找到端口映射记录")
+		conn.Close()
+		return
+	}
+
+	token := Users[port]
+	Log("找到端口映射：port=", port, "token=", token)
+
+	//通过token找到连接池
+	if _, ok := Devices[token];!ok {
+		Log("未找到映射连接池")
+		conn.Close()
+		return
+	}
+
+	pool := Devices[token]
+
+	//先读取设备连接
+	var device net.Conn
+	for {
+		var err error
+		device, err = pool.Get()
+		if err != nil {
+			Log("用户-没有可用设备")
+			conn.Close()
+			return
+		}
+
+		live := checkLive(device)
+		if live != nil {
+			Log("用户-选定设备已断开")
+			device.Close()
+			continue
+		}
+
+		break
+	}
+
+	Log("用户-连接设备：", device.RemoteAddr().String())
+
+	//向设备转发原始请求
+    go CopyUserToMobile(ctx, conn, device)
+	go CopyMobileToUser(ctx, device, conn)
+}
+
+//转发用户数据到设备
+func CopyUserToMobile(ctx context.Context, input net.Conn, output net.Conn) (err error) {
+	buf := make([]byte, 8192)
+	for {
+		select {
+			case <-ctx.Done():
+						Log("用户转发到设备退出")
+						input.Close()
+						output.Close()
+						return;
+			default    :
+						count, err := input.Read(buf)
+						if err != nil {
+							if err == io.EOF && count > 0 {
+								output.Write(buf[:count])
+							}
+
+							if err == io.EOF  && count == 0 {
+								Log("用户主动断开")
+							}
+
+							break
+						}
+
+						if count > 0 {
+							_, err := output.Write(buf[:count])
+							if err != nil {
+								Log("设备被动断开")
+							}
+						}
+		}
+	}
+
+	Log("设备连接断开")
+	output.Close()
+
+	return
+}
+
+//转发设备数据到用户
+func CopyMobileToUser(ctx context.Context, input net.Conn, output net.Conn) (err error) {
+	buf := make([]byte, 8192)
+	for {
+		select {
+			case <-ctx.Done():
+						Log("设备转发到用户退出")
+						input.Close()
+						output.Close()
+						return;
+			default    :
+
+						count, err := input.Read(buf)
+						if err != nil {
+							if err == io.EOF && count > 0 {
+								output.Write(buf[:count])
+							}
+
+							if err == io.EOF  && count == 0 {
+								Log("设备主动断开")
+							}
+
+							break
+						}
+
+						if count > 0 {
+							_, err := output.Write(buf[:count])
+							if err != nil {
+								Log("用户被动断开")
+							}
+						}
+		}
+	}
+
+	Log("用户连接断开")
+	output.Close()
+
+	return
+}
+
+//检查连接是否可用
+var errUnexpectedRead = errors.New("unexpected read from socket")
+func checkLive(conn net.Conn) error {
+	var sysErr error
+
+	sysConn, ok := conn.(syscall.Conn)
+	if !ok {
+		return nil
+	}
+	rawConn, err := sysConn.SyscallConn()
+	if err != nil {
+		return err
+	}
+
+	err = rawConn.Read(func(fd uintptr) bool {
+		var buf [1]byte
+		n, err := syscall.Read(int(fd), buf[:])
+		switch {
+		case n == 0 && err == nil:
+			sysErr = io.EOF
+		case n > 0:
+			sysErr = errUnexpectedRead
+		case err == syscall.EAGAIN || err == syscall.EWOULDBLOCK:
+			sysErr = nil
+		default:
+			sysErr = err
+		}
+		return true
+	})
+
+	if err != nil {
+		return err
+	}
+
+	return sysErr
+}
 
 
 
