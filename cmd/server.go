@@ -104,7 +104,7 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 
 
 	//创建上下文
-	ctx, _ := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, _ := context.WithTimeout(context.Background(), 60*time.Second)
 
 	//启动异步监听
 	go listenCustomer(ctx, listener, port)
@@ -242,6 +242,7 @@ func listenCustomer(ctx context.Context, listener *net.TCPListener, port int) {
 		select {
 			case <-ctx.Done():
 						Log("用户监听退出：port=", port)
+						listener.Close()
 						return;
 			default    :
 						conn,err := listener.AcceptTCP()
