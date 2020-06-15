@@ -104,7 +104,14 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 
 
 	//创建上下文
-	ctx, _ := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+
+	go func() {
+		time.Sleep(60 * time.Second)
+		Log("用户监听超时：port=", port)
+		cancel()
+		listener.Close()
+	}()
 
 	//启动异步监听
 	go listenCustomer(ctx, listener, port)
@@ -173,6 +180,13 @@ func handleMobile(conn net.Conn) {
 
 	reader      := bufio.NewReader(conn)
 	version, _  := reader.ReadByte()
+
+	if version != 1 {
+		Log("版本错误：已断开")
+		conn.Close()
+		return
+	}
+
 	length, _   := reader.ReadByte()
 	auth        := make([]byte, length)
 	io.ReadFull(reader, auth)
@@ -247,7 +261,7 @@ func listenCustomer(ctx context.Context, listener *net.TCPListener, port int) {
 			default    :
 						conn,err := listener.AcceptTCP()
 						if err != nil {
-							log.Fatal(err)
+							Log("用户监听关闭：port=", port)
 							continue
 						}
 
@@ -325,7 +339,9 @@ func handleCustomer(ctx context.Context, conn net.Conn, port int) {
 }
 
 //转发用户数据到设备
-func CopyUserToMobile(ctx context.Context, input net.Conn, output net.Conn) (err error) {
+func CopyUserToMobile(ctx context.Context, input net.Conn, output net.Conn) {
+	defer output.Close()
+
 	buf := make([]byte, 8192)
 	for {
 		select {
@@ -343,6 +359,7 @@ func CopyUserToMobile(ctx context.Context, input net.Conn, output net.Conn) (err
 
 							if err == io.EOF  && count == 0 {
 								Log("用户主动断开")
+								return
 							}
 
 							break
@@ -352,19 +369,17 @@ func CopyUserToMobile(ctx context.Context, input net.Conn, output net.Conn) (err
 							_, err := output.Write(buf[:count])
 							if err != nil {
 								Log("设备被动断开")
+								return
 							}
 						}
 		}
 	}
-
-	Log("设备连接断开")
-	output.Close()
-
-	return
 }
 
 //转发设备数据到用户
-func CopyMobileToUser(ctx context.Context, input net.Conn, output net.Conn) (err error) {
+func CopyMobileToUser(ctx context.Context, input net.Conn, output net.Conn) {
+	defer output.Close()
+
 	buf := make([]byte, 8192)
 	for {
 		select {
@@ -372,7 +387,7 @@ func CopyMobileToUser(ctx context.Context, input net.Conn, output net.Conn) (err
 						Log("设备转发到用户退出")
 						input.Close()
 						output.Close()
-						return;
+						return
 			default    :
 
 						count, err := input.Read(buf)
@@ -383,6 +398,7 @@ func CopyMobileToUser(ctx context.Context, input net.Conn, output net.Conn) (err
 
 							if err == io.EOF  && count == 0 {
 								Log("设备主动断开")
+								return
 							}
 
 							break
@@ -392,15 +408,11 @@ func CopyMobileToUser(ctx context.Context, input net.Conn, output net.Conn) (err
 							_, err := output.Write(buf[:count])
 							if err != nil {
 								Log("用户被动断开")
+								return
 							}
 						}
 		}
 	}
-
-	Log("用户连接断开")
-	output.Close()
-
-	return
 }
 
 //检查连接是否可用
