@@ -123,6 +123,7 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 		Log("用户监听超时：port=", port)
 		cancel()
 		listener.Close()
+		delete(Users, port)
 	}()
 
 	//启动异步监听
