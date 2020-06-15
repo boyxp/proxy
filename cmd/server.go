@@ -20,6 +20,7 @@ import "strings"
 var Debug bool
 var Devices = make(map[string]proxy.TcpPool)
 var Users   = make(map[int]string)
+var DPort string
 
 func main() {
 	//处理传入参数
@@ -29,6 +30,7 @@ func main() {
 	flag.Parse()
 
 	Debug = *debug
+	DPort = *devicePort
 
     Log("设备端口：", *devicePort)
     Log("指令端口：", *commandPort)
@@ -54,7 +56,8 @@ func main() {
 type Resp struct {
 	Errno int   `json:"errno"`
 	Msg  string `json:"msg"`
-	Port int    `json:"port"`
+	CPort int    `json:"c_port"`
+	DPort string    `json:"d_port"`
 }
 
 //指令处理
@@ -134,8 +137,8 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 //指令返回json
-func Res(Errno int, Msg  string, Port int) []byte {
-	res := Resp{Errno:Errno, Msg:Msg, Port:Port}
+func Res(Errno int, Msg  string, CPort int) []byte {
+	res := Resp{Errno:Errno, Msg:Msg, CPort:CPort, DPort:DPort}
 
 	raw, err := json.Marshal(&res)
     if err != nil {
