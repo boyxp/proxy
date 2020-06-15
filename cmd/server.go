@@ -14,6 +14,7 @@ import "proxy"
 
 var Debug bool
 var Devices = make(map[string]proxy.TcpPool)
+var Users   = make(map[int]string)
 
 func main() {
 	//处理传入参数
@@ -96,7 +97,7 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 
 	port := listener.Addr().(*net.TCPAddr).Port
 
-	fmt.Println("token:", token, "userId:", userId, "port:", port)
+	Log("命令：token=", token, "userId=", userId, "port=", port)
 
 
 
@@ -105,6 +106,9 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 
 	//go listen_customer(listener, quit, token)
 
+	Users[port] = token
+
+	Log("用户数：", len(Users))
 
 	//返回结果
 	w.Write(Res(200, "Success", port))
