@@ -128,7 +128,7 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	//启动异步监听
-	go listenCustomer(ctx, listener, port, ip)
+	go listenCustomer(ctx, listener, port, ip, userId)
 
 	Users[port] = token
 
@@ -270,7 +270,7 @@ func heartbeat(conn net.Conn) (err error) {
 
 //用户端连接处理===========================================================================
 //用户监听
-func listenCustomer(ctx context.Context, listener *net.TCPListener, port int, ip string) {
+func listenCustomer(ctx context.Context, listener *net.TCPListener, port int, ip string, userId string) {
 	for{
 		select {
 			case <-ctx.Done():
@@ -297,13 +297,13 @@ func listenCustomer(ctx context.Context, listener *net.TCPListener, port int, ip
 						conn.SetKeepAlive(true)
 						conn.SetKeepAlivePeriod(5*time.Second)
 
-						go handleCustomer(ctx, conn, port)
+						go handleCustomer(ctx, conn, port, userId)
 		}
 	}
 }
 
 //用户握手
-func handleCustomer(ctx context.Context, conn net.Conn, port int) {
+func handleCustomer(ctx context.Context, conn net.Conn, port int, userId string) {
 	reader      := bufio.NewReader(conn)
 	version, _  := reader.ReadByte()
 	nmethods, _ := reader.ReadByte()
@@ -357,22 +357,23 @@ func handleCustomer(ctx context.Context, conn net.Conn, port int) {
 	Log(Now(), "用户<-连接->设备：user=", conn.RemoteAddr().String(), "device=", device.RemoteAddr().String())
 
 	//向设备转发原始请求
-    go CopyUserToMobile(ctx, conn, device)
-	go CopyMobileToUser(ctx, device, conn)
+    go CopyUserToMobile(ctx, conn, device, userId)
+	go CopyMobileToUser(ctx, device, conn, userId)
 }
 
 //转发用户数据到设备
-func CopyUserToMobile(ctx context.Context, input net.Conn, output net.Conn) {
+func CopyUserToMobile(ctx context.Context, input net.Conn, output net.Conn, userId string) {
 	defer output.Close()
 
-	user   := input.RemoteAddr().String()
-	device := output.RemoteAddr().String()
+	user    := input.RemoteAddr().String()
+	device  := output.RemoteAddr().String()
+	traffic := 0
 
 	buf := make([]byte, 8192)
 	for {
 		select {
 			case <-ctx.Done():
-						Log(Now(), "用户转发到设备退出：user=", user, "device=", device)
+						Log(Now(), "用户转发到设备退出：user=", user, "device=", device, "userId=", userId, "traffic_up=", traffic)
 						input.Close()
 						output.Close()
 						return;
@@ -380,11 +381,12 @@ func CopyUserToMobile(ctx context.Context, input net.Conn, output net.Conn) {
 						count, err := input.Read(buf)
 						if err != nil {
 							if err == io.EOF && count > 0 {
+								traffic += count
 								output.Write(buf[:count])
 							}
 
 							if err == io.EOF  && count == 0 {
-								Log(Now(), "用户主动断开：user=", user, "device=", device)
+								Log(Now(), "用户主动断开：user=", user, "device=", device, "userId=", userId, "traffic_up=", traffic)
 								return
 							}
 
@@ -392,9 +394,10 @@ func CopyUserToMobile(ctx context.Context, input net.Conn, output net.Conn) {
 						}
 
 						if count > 0 {
+							traffic += count
 							_, err := output.Write(buf[:count])
 							if err != nil {
-								Log(Now(), "设备被动断开：user=", user, "device=", device)
+								Log(Now(), "设备被动断开：user=", user, "device=", device, "userId=", userId, "traffic_up=", traffic)
 								return
 							}
 						}
@@ -403,17 +406,18 @@ func CopyUserToMobile(ctx context.Context, input net.Conn, output net.Conn) {
 }
 
 //转发设备数据到用户
-func CopyMobileToUser(ctx context.Context, input net.Conn, output net.Conn) {
+func CopyMobileToUser(ctx context.Context, input net.Conn, output net.Conn, userId string) {
 	defer output.Close()
 
-	user   := output.RemoteAddr().String()
-	device := input.RemoteAddr().String()
+	user    := output.RemoteAddr().String()
+	device  := input.RemoteAddr().String()
+	traffic := 0
 
 	buf := make([]byte, 8192)
 	for {
 		select {
 			case <-ctx.Done():
-						Log(Now(), "设备转发到用户退出：device=", device, "user=", user)
+						Log(Now(), "设备转发到用户退出：device=", device, "user=", user, "userId=", userId, "traffic_down=", traffic)
 						input.Close()
 						output.Close()
 						return
@@ -422,11 +426,12 @@ func CopyMobileToUser(ctx context.Context, input net.Conn, output net.Conn) {
 						count, err := input.Read(buf)
 						if err != nil {
 							if err == io.EOF && count > 0 {
+								traffic += count
 								output.Write(buf[:count])
 							}
 
 							if err == io.EOF  && count == 0 {
-								Log(Now(), "设备主动断开：device=", device, "user=", user)
+								Log(Now(), "设备主动断开：device=", device, "user=", user, "userId=", userId, "traffic_down=", traffic)
 								return
 							}
 
@@ -434,9 +439,10 @@ func CopyMobileToUser(ctx context.Context, input net.Conn, output net.Conn) {
 						}
 
 						if count > 0 {
+							traffic += count
 							_, err := output.Write(buf[:count])
 							if err != nil {
-								Log(Now(), "用户被动断开：device=", device, "user=", user)
+								Log(Now(), "用户被动断开：device=", device, "user=", user, "userId=", userId, "traffic_down=", traffic)
 								return
 							}
 						}
