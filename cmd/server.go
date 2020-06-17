@@ -32,9 +32,9 @@ func main() {
 	Debug = *debug
 	DPort = *devicePort
 
-    Log("设备端口：", *devicePort)
-    Log("指令端口：", *commandPort)
-    Log("调试模式：", *debug)
+    Log(Now(), "设备端口：", *devicePort)
+    Log(Now(), "指令端口：", *commandPort)
+    Log(Now(), "调试模式：", *debug)
 
 	runtime.GOMAXPROCS(4)
 
@@ -73,7 +73,7 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
         http.Error(w, "error", 400)
         return
     }
-    fmt.Println(string(decode))
+    Log(Now(), "命令：JSON=", string(decode))
 
     //解析请求json
     jr := strings.NewReader(string(decode))
@@ -113,7 +113,7 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 
 	port := listener.Addr().(*net.TCPAddr).Port
 
-	Log("命令：token=", token, "userId=", userId, "port=", port, "c_ip=", ip, "timeout=", timeout)
+	Log(Now(), "命令：token=", token, "userId=", userId, "c_port=", port, "c_ip=", ip, "timeout=", timeout)
 
 
 	//创建上下文
@@ -121,7 +121,7 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 
 	go func() {
 		time.Sleep(time.Duration(timeout) * time.Second)
-		Log("用户监听超时：port=", port)
+		Log(Now(), "用户监听超时：port=", port)
 		cancel()
 		listener.Close()
 		delete(Users, port)
@@ -190,13 +190,15 @@ func listenMobile(port string) {
 //设备处理
 func handleMobile(conn net.Conn) {
 
-	Log("设备-请求时间：", time.Now().Format("2006-01-02 15:04:05"))
+	remote := conn.RemoteAddr().String()
+
+	Log(Now(), "设备-请求：remote=", remote)
 
 	reader      := bufio.NewReader(conn)
 	version, _  := reader.ReadByte()
 
 	if version != 1 {
-		Log("版本错误：已断开")
+		Log(Now(), "设备-版本错误：已断开，remote=", remote)
 		conn.Close()
 		return
 	}
@@ -204,7 +206,7 @@ func handleMobile(conn net.Conn) {
 	length, _   := reader.ReadByte()
 
 	if length > 32 {
-		Log("token超长：已断开")
+		Log(Now(), "设备-token超长：已断开，remote=", remote)
 		conn.Close()
 		return
 	}
@@ -213,27 +215,23 @@ func handleMobile(conn net.Conn) {
 	io.ReadFull(reader, auth)
 	token       := string(auth)
 
-	Log("设备-连接信息：版本=", version, "len=", length, "token=", token)
-
 	conn.Write([]byte{1, 0})
 
-	Log("设备-连接地址：", conn.RemoteAddr().String())
-
+	Log(Now(), "设备-握手：remote=", remote, "version=", version, "len=", length, "token=", token)
 
 	//判断设备连接池是否存在,不存在则初始化
 	if _, ok := Devices[token]; !ok {
 		pool := proxy.TcpPool{}
 		pool.Init(20)
 		Devices[token] = pool;
-		Log("设备-创建连接池：", token)
+		Log(Now(), "设备-创建连接池：remote=", remote, "token=", token)
 	}
 
 	pool := Devices[token]
 	pool.Put(conn)
 	Devices[token] = pool
 
-	Log("设备-总连接数：", pool.Len())
-	Log("设备-总设备数：", len(Devices))
+	Log(Now(), "统计：总连接数=", pool.Len(), "总设备数=", len(Devices))
 
 	if Debug == true {
 		go heartbeat(conn)
@@ -276,25 +274,25 @@ func listenCustomer(ctx context.Context, listener *net.TCPListener, port int, ip
 	for{
 		select {
 			case <-ctx.Done():
-						Log("用户监听退出：port=", port)
+						Log(Now(), "用户监听退出：port=", port)
 						listener.Close()
 						return;
 			default    :
 						conn,err := listener.AcceptTCP()
 						if err != nil {
-							Log("用户监听关闭：port=", port)
+							Log(Now(), "用户监听关闭：port=", port)
 							continue
 						}
 
 						addr  := conn.RemoteAddr().String()
 						check := strings.Contains(addr, ip)
 						if check == false {
-							Log("不在白名单：remote=", addr, "ip=", ip)
+							Log(Now(), "用户-不在白名单：remote=", addr, "ip=", ip)
 							conn.Close()
 							continue
 						}
 
-						Log("在白名单：remote=", addr, "ip=", ip)
+						Log(Now(), "用户-在白名单：remote=", addr, "ip=", ip)
 
 						conn.SetKeepAlive(true)
 						conn.SetKeepAlivePeriod(5*time.Second)
@@ -306,9 +304,6 @@ func listenCustomer(ctx context.Context, listener *net.TCPListener, port int, ip
 
 //用户握手
 func handleCustomer(ctx context.Context, conn net.Conn, port int) {
-
-	Log("用户-请求时间：", time.Now().Format("2006-01-02 15:04:05"))
-
 	reader      := bufio.NewReader(conn)
 	version, _  := reader.ReadByte()
 	nmethods, _ := reader.ReadByte()
@@ -317,10 +312,7 @@ func handleCustomer(ctx context.Context, conn net.Conn, port int) {
 
 	conn.Write([]byte{5, 0})
 
-	Log("用户-连接信息：版本=", version, "nmethods=", nmethods, "methods=", methods)
-
-	Log("用户-连接地址：", conn.RemoteAddr().String())
-	Log("用户-监听端口：", port)
+	Log(Now(), "用户-连接信息：port=", port, "remote=", conn.RemoteAddr().String(), "version=", version, "nmethods=", nmethods, "methods=", methods)
 
 	//通过端口映射查找token
 	if _, ok := Users[port];!ok {
@@ -330,7 +322,7 @@ func handleCustomer(ctx context.Context, conn net.Conn, port int) {
 	}
 
 	token := Users[port]
-	Log("找到端口映射：port=", port, "token=", token)
+	Log(Now(), "用户-找到端口映射：port=", port, "token=", token)
 
 	//通过token找到连接池
 	if _, ok := Devices[token];!ok {
@@ -362,7 +354,7 @@ func handleCustomer(ctx context.Context, conn net.Conn, port int) {
 		break
 	}
 
-	Log("用户-连接设备：", device.RemoteAddr().String())
+	Log(Now(), "用户<-连接->设备：user=", conn.RemoteAddr().String(), "device=", device.RemoteAddr().String())
 
 	//向设备转发原始请求
     go CopyUserToMobile(ctx, conn, device)
@@ -373,11 +365,14 @@ func handleCustomer(ctx context.Context, conn net.Conn, port int) {
 func CopyUserToMobile(ctx context.Context, input net.Conn, output net.Conn) {
 	defer output.Close()
 
+	user   := input.RemoteAddr().String()
+	device := output.RemoteAddr().String()
+
 	buf := make([]byte, 8192)
 	for {
 		select {
 			case <-ctx.Done():
-						Log("用户转发到设备退出")
+						Log(Now(), "用户转发到设备退出：user=", user, "device=", device)
 						input.Close()
 						output.Close()
 						return;
@@ -389,7 +384,7 @@ func CopyUserToMobile(ctx context.Context, input net.Conn, output net.Conn) {
 							}
 
 							if err == io.EOF  && count == 0 {
-								Log("用户主动断开")
+								Log(Now(), "用户主动断开：user=", user, "device=", device)
 								return
 							}
 
@@ -399,7 +394,7 @@ func CopyUserToMobile(ctx context.Context, input net.Conn, output net.Conn) {
 						if count > 0 {
 							_, err := output.Write(buf[:count])
 							if err != nil {
-								Log("设备被动断开")
+								Log(Now(), "设备被动断开：user=", user, "device=", device)
 								return
 							}
 						}
@@ -411,11 +406,14 @@ func CopyUserToMobile(ctx context.Context, input net.Conn, output net.Conn) {
 func CopyMobileToUser(ctx context.Context, input net.Conn, output net.Conn) {
 	defer output.Close()
 
+	user   := output.RemoteAddr().String()
+	device := input.RemoteAddr().String()
+
 	buf := make([]byte, 8192)
 	for {
 		select {
 			case <-ctx.Done():
-						Log("设备转发到用户退出")
+						Log(Now(), "设备转发到用户退出：device=", device, "user=", user)
 						input.Close()
 						output.Close()
 						return
@@ -428,7 +426,7 @@ func CopyMobileToUser(ctx context.Context, input net.Conn, output net.Conn) {
 							}
 
 							if err == io.EOF  && count == 0 {
-								Log("设备主动断开")
+								Log(Now(), "设备主动断开：device=", device, "user=", user)
 								return
 							}
 
@@ -438,7 +436,7 @@ func CopyMobileToUser(ctx context.Context, input net.Conn, output net.Conn) {
 						if count > 0 {
 							_, err := output.Write(buf[:count])
 							if err != nil {
-								Log("用户被动断开")
+								Log(Now(), "用户被动断开：device=", device, "user=", user)
 								return
 							}
 						}
@@ -499,4 +497,8 @@ func Close(conn net.Conn) {
 func Log(v ...interface{}) {
     fmt.Println(v...)
     return
+}
+
+func Now() string {
+	return time.Now().Format("2006-01-02 15:04:05")
 }
