@@ -132,7 +132,7 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 
 	Users[port] = token
 
-	Log("用户数：", len(Users))
+	Log(Now(), "统计-用户数：", len(Users))
 
 	//返回结果
 	w.Write(Res(200, "Success", port))
