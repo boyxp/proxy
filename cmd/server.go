@@ -291,6 +291,7 @@ func listenCustomer(ctx context.Context, listener *net.TCPListener, port int, ip
 						if check == false {
 							Log("不在白名单：remote=", addr, "ip=", ip)
 							conn.Close()
+							continue
 						}
 
 						Log("在白名单：remote=", addr, "ip=", ip)
