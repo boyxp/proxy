@@ -93,6 +93,7 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 
    	token  := data["token"].(string)
    	userId := data["userId"].(string)
+   	ip     := data["c_ip"].(string)
 
    	//==如果token已经创建过连接池则报错
 
@@ -116,10 +117,10 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 
 
 	//创建上下文
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Second)
 
 	go func() {
-		time.Sleep(60 * time.Second)
+		time.Sleep(300 * time.Second)
 		Log("用户监听超时：port=", port)
 		cancel()
 		listener.Close()
@@ -127,7 +128,7 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	//启动异步监听
-	go listenCustomer(ctx, listener, port)
+	go listenCustomer(ctx, listener, port, ip)
 
 	Users[port] = token
 
@@ -201,6 +202,13 @@ func handleMobile(conn net.Conn) {
 	}
 
 	length, _   := reader.ReadByte()
+
+	if length > 32 {
+		Log("token超长：已断开")
+		conn.Close()
+		return
+	}
+
 	auth        := make([]byte, length)
 	io.ReadFull(reader, auth)
 	token       := string(auth)
@@ -264,7 +272,7 @@ func heartbeat(conn net.Conn) (err error) {
 
 //用户端连接处理===========================================================================
 //用户监听
-func listenCustomer(ctx context.Context, listener *net.TCPListener, port int) {
+func listenCustomer(ctx context.Context, listener *net.TCPListener, port int, ip string) {
 	for{
 		select {
 			case <-ctx.Done():
@@ -277,6 +285,15 @@ func listenCustomer(ctx context.Context, listener *net.TCPListener, port int) {
 							Log("用户监听关闭：port=", port)
 							continue
 						}
+
+						addr  := conn.RemoteAddr().String()
+						check := strings.Contains(addr, ip)
+						if check == false {
+							Log("不在白名单：remote=", addr, "ip=", ip)
+							conn.Close()
+						}
+
+						Log("在白名单：remote=", addr, "ip=", ip)
 
 						conn.SetKeepAlive(true)
 						conn.SetKeepAlivePeriod(5*time.Second)
