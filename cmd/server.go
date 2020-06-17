@@ -91,12 +91,12 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
    		return
    	}
 
-   	token  := data["token"].(string)
-   	userId := data["userId"].(string)
-   	ip     := data["c_ip"].(string)
+   	token   := data["token"].(string)
+   	userId  := data["userId"].(string)
+   	ip      := data["c_ip"].(string)
+   	timeout := data["timeout"].(float64)
 
    	//==如果token已经创建过连接池则报错
-
 
    	//创建监听，随机分配端口
     tcpAddr, err := net.ResolveTCPAddr("tcp", "0.0.0.0:0")
@@ -113,14 +113,14 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 
 	port := listener.Addr().(*net.TCPAddr).Port
 
-	Log("命令：token=", token, "userId=", userId, "port=", port)
+	Log("命令：token=", token, "userId=", userId, "port=", port, "c_ip=", ip, "timeout=", timeout)
 
 
 	//创建上下文
-	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
 
 	go func() {
-		time.Sleep(300 * time.Second)
+		time.Sleep(time.Duration(timeout) * time.Second)
 		Log("用户监听超时：port=", port)
 		cancel()
 		listener.Close()
