@@ -222,7 +222,7 @@ func handleMobile(conn net.Conn) {
 	//判断设备连接池是否存在,不存在则初始化
 	if _, ok := Devices[token]; !ok {
 		pool := proxy.TcpPool{}
-		pool.Init(20)
+		pool.Init(200)
 		Devices[token] = pool;
 		Log(Now(), "设备-创建连接池：token=", token, "remote=", remote)
 	}
