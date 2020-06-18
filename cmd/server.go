@@ -76,25 +76,25 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
     Log(Now(), "命令：JSON=", string(decode))
 
     //解析请求json
-    jr := strings.NewReader(string(decode))
-	query := make(map[string]interface{})
-   	json.NewDecoder(jr).Decode(&query)
+    var IJson interface{}
+	JErr := json.Unmarshal(decode, &IJson)
+	if JErr != nil {
+		http.Error(w, "json error", 400)
+   		return
+	}
 
-   	if _, ok := query["data"]; !ok {
+	JOut  := IJson.(map[string]interface{})
+	if _, ok := JOut["data"]; !ok {
    		http.Error(w, "json error", 400)
    		return
    	}
 
-   	data := query["data"].(map[string]interface{})
-   	if _, ok := data["token"]; !ok {
-   		http.Error(w, "json error", 400)
-   		return
-   	}
-
+	data    := JOut["data"].(map[string]interface{})
    	token   := data["token"].(string)
    	userId  := data["userId"].(string)
    	ip      := data["c_ip"].(string)
    	timeout := data["timeout"].(float64)
+
 
    	//==如果token已经创建过连接池则报错
 
