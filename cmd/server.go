@@ -116,6 +116,13 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 	Log(Now(), "命令：token=", token, "userId=", userId, "c_port=", port, "c_ip=", ip, "timeout=", timeout)
 
 
+	//创建连接池
+	pool := proxy.TcpPool{}
+	pool.Init(200)
+	Devices[token] = pool;
+	Log(Now(), "创建连接池：token=", token, "userId=", userId, "c_port=", port, "c_ip=", ip, "timeout=", timeout)
+
+
 	//创建上下文
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
 
@@ -219,12 +226,11 @@ func handleMobile(conn net.Conn) {
 
 	Log(Now(), "设备-握手：token=", token, "remote=", remote, "version=", version, "len=", length)
 
-	//判断设备连接池是否存在,不存在则初始化
+	//判断设备连接池是否存在,不存在则断开
 	if _, ok := Devices[token]; !ok {
-		pool := proxy.TcpPool{}
-		pool.Init(200)
-		Devices[token] = pool;
-		Log(Now(), "设备-创建连接池：token=", token, "remote=", remote)
+		Log(Now(), "设备-连接池不存在：token=", token, "remote=", remote)
+		conn.Close()
+		return
 	}
 
 	pool := Devices[token]
