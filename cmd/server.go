@@ -129,9 +129,33 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		time.Sleep(time.Duration(timeout) * time.Second)
 		Log(Now(), "用户监听超时：port=", port)
+
+		//发送超时指令
 		cancel()
+
+		//关闭端口监听
 		listener.Close()
+
+		//删除端口映射
 		delete(Users, port)
+
+		//清理连接池残留连接
+		pool := Devices[token]
+		var device net.Conn
+		var len = pool.Len()
+		for i:=0;i<=len;i++ {
+			var err error
+			device, err = pool.Get()
+			if err == nil {
+				Log(Now(), "超时清理设备：port=", port, "token=", token, "seq=", i)
+				device.Close()
+			}
+		}
+
+		//清理连接池映射
+		delete(Devices, token)
+
+		Log(Now(), "超时清理设备完毕：port=", port, "token=", token, "len=", len)
 	}()
 
 	//启动异步监听
