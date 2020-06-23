@@ -20,7 +20,7 @@ import "sync"
 
 var Debug bool
 var Devices sync.Map
-var Users   = make(map[int]string)
+var Users sync.Map
 var DPort string
 
 func main() {
@@ -146,7 +146,7 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 		listener.Close()
 
 		//删除端口映射
-		delete(Users, port)
+		Users.Delete(port)
 
 		//清理连接池残留连接
 		ele , _ := Devices.Load(token)
@@ -171,9 +171,9 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 	//启动异步监听
 	go listenCustomer(ctx, listener, port, ip, userId)
 
-	Users[port] = token
+	Users.Store(port, token)
 
-	Log(Now(), "统计-用户数：", len(Users))
+	//Log(Now(), "统计-用户数：", len(Users))
 
 	//返回结果
 	w.Write(Res(200, "Success", port))
@@ -356,13 +356,13 @@ func handleCustomer(ctx context.Context, conn net.Conn, port int, userId string)
 	Log(Now(), "用户-连接信息：userId=", userId, "port=", port, "remote=", conn.RemoteAddr().String(), "version=", version, "nmethods=", nmethods, "methods=", methods)
 
 	//通过端口映射查找token
-	if _, ok := Users[port];!ok {
+	if _, ok := Users.Load(port);!ok {
 		Log("未找到端口映射记录")
 		conn.Close()
 		return
 	}
 
-	token := Users[port]
+	token , _ := Users.Load(port)
 	Log(Now(), "用户-找到端口映射：userId=", userId, "port=", port, "token=", token)
 
 	//通过token找到连接池
