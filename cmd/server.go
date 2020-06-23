@@ -89,7 +89,15 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
    		return
    	}
 
-	data    := JOut["data"].(map[string]interface{})
+   	//读取设置
+	data := JOut["data"].(map[string]interface{})
+
+	//判断参数结构
+	if _, ok := data["timeout"]; !ok {
+   		http.Error(w, "json error", 400)
+   		return
+   	}
+
    	token   := data["token"].(string)
    	userId  := data["userId"].(string)
    	ip      := data["c_ip"].(string)
