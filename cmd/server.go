@@ -16,9 +16,10 @@ import "syscall"
 import "errors"
 import "encoding/base64"
 import "strings"
+import "sync"
 
 var Debug bool
-var Devices = make(map[string]proxy.TcpPool)
+var Devices sync.Map
 var Users   = make(map[int]string)
 var DPort string
 
@@ -127,7 +128,7 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 	//创建连接池
 	pool := proxy.TcpPool{}
 	pool.Init(200)
-	Devices[token] = pool;
+	Devices.Store(token, pool)
 	Log(Now(), "创建连接池：token=", token, "userId=", userId, "c_port=", port, "c_ip=", ip, "timeout=", timeout)
 
 
@@ -148,7 +149,8 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 		delete(Users, port)
 
 		//清理连接池残留连接
-		pool := Devices[token]
+		ele , _ := Devices.Load(token)
+		pool := ele.(proxy.TcpPool)
 		var device net.Conn
 		var len = pool.Len()
 		for i:=0;i<=len;i++ {
@@ -161,7 +163,7 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		//清理连接池映射
-		delete(Devices, token)
+		Devices.Delete(token)
 
 		Log(Now(), "超时清理设备完毕：port=", port, "token=", token, "len=", len)
 	}()
@@ -259,17 +261,18 @@ func handleMobile(conn net.Conn) {
 	Log(Now(), "设备-握手：token=", token, "remote=", remote, "version=", version, "len=", length)
 
 	//判断设备连接池是否存在,不存在则断开
-	if _, ok := Devices[token]; !ok {
+	if _, ok := Devices.Load(token); !ok {
 		Log(Now(), "设备-连接池不存在：token=", token, "remote=", remote)
 		conn.Close()
 		return
 	}
 
-	pool := Devices[token]
+	ele , _ := Devices.Load(token)
+	pool    := ele.(proxy.TcpPool)
 	pool.Put(conn)
-	Devices[token] = pool
+	Devices.Store(token, pool)
 
-	Log(Now(), "统计：总连接数=", pool.Len(), "总设备数=", len(Devices))
+	Log(Now(), "统计：设备连接数=", pool.Len())
 
 	if Debug == true {
 		go heartbeat(conn)
@@ -363,13 +366,14 @@ func handleCustomer(ctx context.Context, conn net.Conn, port int, userId string)
 	Log(Now(), "用户-找到端口映射：userId=", userId, "port=", port, "token=", token)
 
 	//通过token找到连接池
-	if _, ok := Devices[token];!ok {
+	if _, ok := Devices.Load(token);!ok {
 		Log(Now(), "未找到映射连接池：userId=", userId, "port=", port)
 		conn.Close()
 		return
 	}
 
-	pool := Devices[token]
+	ele , _ := Devices.Load(token)
+	pool    := ele.(proxy.TcpPool)
 
 	//先读取设备连接
 	var device net.Conn
