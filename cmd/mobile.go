@@ -15,6 +15,7 @@ func main() {
 	port  := flag.Int("port", 8888, "代理服务器端口")
 	token := flag.String("token", "aaaabbbbccccdddd", "设备标识")
 	debug := flag.Bool("debug", false, "调试模式")
+	num   := flag.Int("num", 100, "连接数")
 	flag.Parse()
 
 	if flag.NFlag() < 2 {
@@ -25,39 +26,48 @@ func main() {
 	Log("服务器IP：", *ip)
 	Log("服务器端口：", *port)
 
+	for i:=0;i<*num;i++ {
+		go connect(*ip, *port, *token, *debug, i)
+	}
+
+	run := make(chan int)
+	<- run
+}
+
+func connect(ip string, port int, token string, debug bool, seq int) {
 	//建立连接
-	server := *ip+":"+strconv.Itoa(*port)
+	server := ip+":"+strconv.Itoa(port)
 
 	conn, err := net.Dial("tcp", server)
 	if err != nil {
-		Log("连接失败:", err)
+		Log("连接失败：seq=", seq, "err=", err)
 		return
 	}
 
 	//写入token
-	len   := len(*token)
+	len   := len(token)
 
 	req := []byte{1, uint8(len)}
 	conn.Write(req)
-	conn.Write([]byte(*token))
+	conn.Write([]byte(token))
 
 	//读取响应
 	reader := bufio.NewReader(conn)
 
 	ver, _ := reader.ReadByte()
-	Log("响应版本：", ver)
+	Log("响应版本：seq=", seq, "ver=", ver)
 
 	status, _ := reader.ReadByte()
-	Log("响应status：", status)
+	Log("响应status：seq=", seq, "status=", status)
 
-	if *debug {
+	if debug {
 		heartbeat(conn)
 	} else {
-		wait(conn)
+		wait(conn, seq)
 	}
 }
 
-func wait(conn net.Conn) {
+func wait(conn net.Conn, seq int) {
 	defer close(conn)
 
 	buf := make([]byte, 8192)
@@ -65,18 +75,18 @@ func wait(conn net.Conn) {
 		count, err := conn.Read(buf)
 		if err != nil {
 			if err == io.EOF && count > 0 {
-				Log("服务器报错：", buf[:count])
+				Log("服务器报错：seq=", seq, "res=", buf[:count])
 			}
 
 			if err == io.EOF  && count == 0 {
-				Log("用户连接关闭")
+				Log("用户连接关闭：seq=", seq)
 			}
 
 			break
 		}
 
 		if count > 0 {
-			Log("用户请求：", string(buf[:count]))
+			Log("用户请求：seq=", seq, "data=", string(buf[:count]))
 			conn.Write([]byte("recv"))
 		}
 	}
