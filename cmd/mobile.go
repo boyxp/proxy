@@ -8,6 +8,7 @@ import "net"
 import "bufio"
 import "time"
 import "io"
+import "proxy"
 
 func main() {
 	//处理传入参数
@@ -40,7 +41,7 @@ func connect(ip string, port int, token string, debug bool, seq int) {
 
 	conn, err := net.Dial("tcp", server)
 	if err != nil {
-		Log("连接失败：seq=", seq, "err=", err)
+		Log(Now(), "连接失败：seq=", seq, "err=", err)
 		return
 	}
 
@@ -55,17 +56,126 @@ func connect(ip string, port int, token string, debug bool, seq int) {
 	reader := bufio.NewReader(conn)
 
 	ver, _ := reader.ReadByte()
-	Log("响应版本：seq=", seq, "ver=", ver)
+	Log(Now(), "响应版本：seq=", seq, "ver=", ver)
 
 	status, _ := reader.ReadByte()
-	Log("响应status：seq=", seq, "status=", status)
+	Log(Now(), "响应status：seq=", seq, "status=", status)
 
 	if debug {
 		heartbeat(conn)
 	} else {
-		wait(conn, seq)
+		//wait(conn, seq)
+		run(conn, seq)
 	}
 }
+
+func run(client net.Conn, seq int) {
+	defer client.Close()
+
+	b := make([]byte, 1024)
+	n, err := client.Read(b[:])
+
+	var host,port string
+	switch b[3] {
+		case 0x01://IP V4
+			host = net.IPv4(b[4],b[5],b[6],b[7]).String()
+		case 0x03://域名
+			host = string(b[5:n-2])//b[4]表示域名的长度
+		case 0x04://IP V6
+			host = net.IP{b[4], b[5], b[6], b[7], b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15], b[16], b[17], b[18], b[19]}.String()
+	}
+	port = strconv.Itoa(int(b[n-2])<<8|int(b[n-1]))
+
+	server, err := net.Dial("tcp", net.JoinHostPort(host, port))
+	if err != nil {
+		Log(Now(), "连接失败：seq=", seq, "err=", err)
+		return
+	}
+
+	Log(Now(), "连接成功：seq=", seq, "host=", host, "port=", port)
+
+	defer server.Close()
+	client.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
+
+	go CopyLocalToRemote(client, server, seq)
+	go CopyRemoteToLocal(server, client, seq)
+}
+
+
+//转发用户数据到设备
+func CopyLocalToRemote(input net.Conn, output net.Conn, seq int) {
+	defer output.Close()
+
+	remote  := output.RemoteAddr().String()
+	traffic := 0
+
+	buf := proxy.Leaky.Get()
+	defer proxy.Leaky.Put(buf)
+
+	for {
+			count, err := input.Read(buf)
+			if err != nil {
+				if err == io.EOF && count > 0 {
+					traffic += count
+					output.Write(buf[:count])
+				}
+
+				if err == io.EOF  && count == 0 {
+					Log(Now(), "用户主动断开：seq=", seq, "remote=", remote, "traffic_up=", traffic)
+					return
+				}
+
+				break
+			}
+
+			if count > 0 {
+				traffic += count
+				_, err := output.Write(buf[:count])
+				if err != nil {
+					Log(Now(), "设备被动断开： seq=", seq, "remote=", remote, "traffic_up=", traffic)
+					return
+				}
+			}
+	}
+}
+
+//转发设备数据到用户
+func CopyRemoteToLocal(input net.Conn, output net.Conn, seq int) {
+	defer output.Close()
+
+	remote  := input.RemoteAddr().String()
+	traffic := 0
+
+	buf := proxy.Leaky.Get()
+	defer proxy.Leaky.Put(buf)
+
+	for {
+			count, err := input.Read(buf)
+			if err != nil {
+				if err == io.EOF && count > 0 {
+					traffic += count
+					output.Write(buf[:count])
+				}
+
+				if err == io.EOF  && count == 0 {
+					Log(Now(), "设备主动断开：seq=", seq, "remote=", remote, "traffic_down=", traffic)
+					return
+				}
+
+				break
+			}
+
+			if count > 0 {
+				traffic += count
+				_, err := output.Write(buf[:count])
+				if err != nil {
+					Log(Now(), "用户被动断开：seq=", seq, "remote=", remote, "traffic_down=", traffic)
+					return
+				}
+			}
+	}
+}
+
 
 func wait(conn net.Conn, seq int) {
 	defer close(conn)
@@ -75,19 +185,20 @@ func wait(conn net.Conn, seq int) {
 		count, err := conn.Read(buf)
 		if err != nil {
 			if err == io.EOF && count > 0 {
-				Log("服务器报错：seq=", seq, "res=", buf[:count])
+				Log(Now(), "服务器报错：seq=", seq, "res=", buf[:count])
 			}
 
 			if err == io.EOF  && count == 0 {
-				Log("用户连接关闭：seq=", seq)
+				Log(Now(), "用户连接关闭：seq=", seq)
 			}
 
 			break
 		}
 
 		if count > 0 {
-			Log("用户请求：seq=", seq, "data=", string(buf[:count]))
+			Log(Now(), "用户请求：seq=", seq, "data=", string(buf[:count]))
 			conn.Write([]byte("recv"))
+			Log(Now(), "请求响应：seq=", seq)
 		}
 	}
 }
@@ -132,4 +243,8 @@ func close(conn net.Conn) {
 func Log(v ...interface{}) {
     fmt.Println(v...)
     return
+}
+
+func Now() string {
+	return time.Now().Format("2006-01-02T15:04:05.999999999Z07:00")
 }
