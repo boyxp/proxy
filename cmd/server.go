@@ -11,12 +11,13 @@ import "bufio"
 import "io"
 import "time"
 import "proxy"
-import "context"
+//import "context"
 import "syscall"
 import "errors"
 import "encoding/base64"
 import "strings"
 import "sync"
+import _ "net/http/pprof"
 
 var Debug bool
 var Devices sync.Map
@@ -141,14 +142,15 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 
 
 	//创建上下文
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
+	//ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
+	ctx := make(chan int)
 
 	go func() {
 		time.Sleep(time.Duration(timeout) * time.Second)
 		Log(Now(), "用户监听超时：port=", port)
 
 		//发送超时指令
-		cancel()
+		close(ctx)
 
 		//关闭端口监听
 		listener.Close()
@@ -319,10 +321,10 @@ func heartbeat(conn net.Conn) (err error) {
 
 //用户端连接处理===========================================================================
 //用户监听
-func listenCustomer(ctx context.Context, listener *net.TCPListener, port int, ip string, userId string) {
+func listenCustomer(ctx chan int, listener *net.TCPListener, port int, ip string, userId string) {
 	for{
 		select {
-			case <-ctx.Done():
+			case <-ctx:
 						Log(Now(), "用户监听超时退出：userId=", userId, "port=", port)
 						listener.Close()
 						return;
@@ -352,7 +354,7 @@ func listenCustomer(ctx context.Context, listener *net.TCPListener, port int, ip
 }
 
 //用户握手
-func handleCustomer(ctx context.Context, conn net.Conn, port int, userId string) {
+func handleCustomer(ctx chan int, conn net.Conn, port int, userId string) {
 	reader      := bufio.NewReader(conn)
 	version, _  := reader.ReadByte()
 	nmethods, _ := reader.ReadByte()
@@ -412,7 +414,7 @@ func handleCustomer(ctx context.Context, conn net.Conn, port int, userId string)
 }
 
 //转发用户数据到设备
-func CopyUserToMobile(ctx context.Context, input net.Conn, output net.Conn, userId string) {
+func CopyUserToMobile(ctx chan int, input net.Conn, output net.Conn, userId string) {
 	defer output.Close()
 
 	user    := input.RemoteAddr().String()
@@ -424,7 +426,7 @@ func CopyUserToMobile(ctx context.Context, input net.Conn, output net.Conn, user
 
 	for {
 		select {
-			case <-ctx.Done():
+			case <-ctx:
 						Log(Now(), "用户转发到设备超时退出：userId=", userId, "user=", user, "device=", device, "traffic_up=", traffic)
 						input.Close()
 						output.Close()
@@ -458,7 +460,7 @@ func CopyUserToMobile(ctx context.Context, input net.Conn, output net.Conn, user
 }
 
 //转发设备数据到用户
-func CopyMobileToUser(ctx context.Context, input net.Conn, output net.Conn, userId string) {
+func CopyMobileToUser(ctx chan int, input net.Conn, output net.Conn, userId string) {
 	defer output.Close()
 
 	user    := output.RemoteAddr().String()
@@ -470,7 +472,7 @@ func CopyMobileToUser(ctx context.Context, input net.Conn, output net.Conn, user
 
 	for {
 		select {
-			case <-ctx.Done():
+			case <-ctx:
 						Log(Now(), "设备转发到用户超时退出：userId=", userId, "device=", device, "user=", user,  "traffic_down=", traffic)
 						input.Close()
 						output.Close()
