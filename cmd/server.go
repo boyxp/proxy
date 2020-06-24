@@ -1,7 +1,7 @@
 package main
 
 import "flag"
-import "runtime"
+//import "runtime"
 import "fmt"
 import "net/http"
 import "encoding/json"
@@ -37,7 +37,7 @@ func main() {
     Log(Now(), "指令端口：", *commandPort)
     Log(Now(), "调试模式：", *debug)
 
-	runtime.GOMAXPROCS(4)
+	//runtime.GOMAXPROCS(4)
 
 	//监听设备请求
 	go listenMobile(*devicePort)
@@ -411,7 +411,9 @@ func CopyUserToMobile(ctx context.Context, input net.Conn, output net.Conn, user
 	device  := output.RemoteAddr().String()
 	traffic := 0
 
-	buf := make([]byte, 8192)
+	buf := proxy.Leaky.Get()
+	defer proxy.Leaky.Put(buf)
+
 	for {
 		select {
 			case <-ctx.Done():
@@ -455,7 +457,9 @@ func CopyMobileToUser(ctx context.Context, input net.Conn, output net.Conn, user
 	device  := input.RemoteAddr().String()
 	traffic := 0
 
-	buf := make([]byte, 8192)
+	buf := proxy.Leaky.Get()
+	defer proxy.Leaky.Put(buf)
+
 	for {
 		select {
 			case <-ctx.Done():
