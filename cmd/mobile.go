@@ -10,13 +10,14 @@ import "time"
 import "io"
 import "proxy"
 
+var pool = make(chan int, 10)
 func main() {
 	//处理传入参数
 	ip    := flag.String("ip", "127.0.0.1", "代理服务器IP地址")
 	port  := flag.Int("port", 8888, "代理服务器端口")
 	token := flag.String("token", "aaaabbbbccccdddd", "设备标识")
 	debug := flag.Bool("debug", false, "调试模式")
-	num   := flag.Int("num", 100, "连接数")
+	num   := flag.Int("num", 10, "备用连接数")
 	flag.Parse()
 
 	if flag.NFlag() < 2 {
@@ -27,12 +28,25 @@ func main() {
 	Log("服务器IP：", *ip)
 	Log("服务器端口：", *port)
 
-	for i:=0;i<*num;i++ {
-		go connect(*ip, *port, *token, *debug, i)
+	//默认创建10个连接
+	for i:=0; i< *num; i++ {
+		pool <- i
+		fmt.Println(i)
 	}
 
-	run := make(chan int)
-	<- run
+	var i int = 0
+	for {
+		select {
+			case <-pool :
+				if len(pool) > *num {
+					continue
+				}
+
+				i++
+				Log(Now(), "创建连接：seq=", i)
+				go connect(*ip, *port, *token, *debug, i)
+		}
+	}
 }
 
 func connect(ip string, port int, token string, debug bool, seq int) {
@@ -75,6 +89,15 @@ func run(client net.Conn, seq int) {
 	b := make([]byte, 1024)
 	n, err := client.Read(b[:])
 
+	if err != nil {
+		if err == io.EOF {
+			Log(Now(), "中转服务器断开：seq=", seq)
+		} else {
+			Log(Now(), "请求错误：seq=", seq, "err=", err)
+		}
+		return
+	}
+
 	var host,port string
 	switch b[3] {
 		case 0x01://IP V4
@@ -83,6 +106,9 @@ func run(client net.Conn, seq int) {
 			host = string(b[5:n-2])//b[4]表示域名的长度
 		case 0x04://IP V6
 			host = net.IP{b[4], b[5], b[6], b[7], b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15], b[16], b[17], b[18], b[19]}.String()
+		default :
+			Log(Now(), "请求错误：seq=", seq)
+			return
 	}
 	port = strconv.Itoa(int(b[n-2])<<8|int(b[n-1]))
 
@@ -97,8 +123,10 @@ func run(client net.Conn, seq int) {
 	defer server.Close()
 	client.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
 
+	pool <- 1
+
 	go CopyLocalToRemote(client, server, seq)
-	go CopyRemoteToLocal(server, client, seq)
+	CopyRemoteToLocal(server, client, seq)
 }
 
 
@@ -121,7 +149,8 @@ func CopyLocalToRemote(input net.Conn, output net.Conn, seq int) {
 				}
 
 				if err == io.EOF  && count == 0 {
-					Log(Now(), "用户主动断开：seq=", seq, "remote=", remote, "traffic_up=", traffic)
+					Log(Now(), "浏览器主动断开：seq=", seq, "remote=", remote, "traffic_up=", traffic)
+					pool <- 1
 					return
 				}
 
@@ -132,7 +161,7 @@ func CopyLocalToRemote(input net.Conn, output net.Conn, seq int) {
 				traffic += count
 				_, err := output.Write(buf[:count])
 				if err != nil {
-					Log(Now(), "设备被动断开： seq=", seq, "remote=", remote, "traffic_up=", traffic)
+					Log(Now(), "服务器主动断开： seq=", seq, "remote=", remote, "traffic_up=", traffic)
 					return
 				}
 			}
@@ -158,7 +187,8 @@ func CopyRemoteToLocal(input net.Conn, output net.Conn, seq int) {
 				}
 
 				if err == io.EOF  && count == 0 {
-					Log(Now(), "设备主动断开：seq=", seq, "remote=", remote, "traffic_down=", traffic)
+					Log(Now(), "服务器主动断开：seq=", seq, "remote=", remote, "traffic_down=", traffic)
+					pool <- 1
 					return
 				}
 
@@ -169,7 +199,7 @@ func CopyRemoteToLocal(input net.Conn, output net.Conn, seq int) {
 				traffic += count
 				_, err := output.Write(buf[:count])
 				if err != nil {
-					Log(Now(), "用户被动断开：seq=", seq, "remote=", remote, "traffic_down=", traffic)
+					Log(Now(), "浏览器主动断开：seq=", seq, "remote=", remote, "traffic_down=", traffic)
 					return
 				}
 			}
