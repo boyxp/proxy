@@ -108,7 +108,15 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
    	//==如果token已经创建过连接池则报错
 
    	//创建监听，随机分配端口
-    tcpAddr, err := net.ResolveTCPAddr("tcp", "0.0.0.0:0")
+   	var rawIP string
+   	if Debug==true {
+   		rawIP = "0.0.0.0:1080"
+   	} else {
+   		rawIP = "0.0.0.0:0"
+   	}
+
+    tcpAddr, err := net.ResolveTCPAddr("tcp", rawIP)
+
     if err != nil {
     	w.Write(Res(400, "端口解析失败", 0))
     	return
@@ -127,7 +135,7 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 
 	//创建连接池
 	pool := proxy.TcpPool{}
-	pool.Init(200)
+	pool.Init(500)
 	Devices.Store(token, pool)
 	Log(Now(), "创建连接池：token=", token, "userId=", userId, "c_port=", port, "c_ip=", ip, "timeout=", timeout)
 
@@ -275,7 +283,7 @@ func handleMobile(conn net.Conn) {
 	Log(Now(), "统计：设备连接数=", pool.Len())
 
 	if Debug == true {
-		go heartbeat(conn)
+		//go heartbeat(conn)
 	}
 }
 
