@@ -345,7 +345,7 @@ func listenCustomer(ctx chan int, listener *net.TCPListener, port int, ip string
 
 						addr  := conn.RemoteAddr().String()
 						check := strings.Contains(addr, ip)
-						if check == false {
+						if check == false && Debug==false {
 							Log(Now(), "用户-不在白名单：userId=", userId, "port=", port, "remote=", addr, "ip=", ip)
 							conn.Close()
 							continue
