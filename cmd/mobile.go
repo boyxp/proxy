@@ -10,7 +10,7 @@ import "time"
 import "io"
 import "proxy"
 
-var pool = make(chan int, 1000)
+var pool = make(chan int, 10000)
 func main() {
 	//处理传入参数
 	ip    := flag.String("ip", "127.0.0.1", "代理服务器IP地址")
