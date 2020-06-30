@@ -143,15 +143,12 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 	Log(Now(), "创建连接池：token=", token, "userId=", userId, "c_port=", port, "c_ip=", ip, "timeout=", timeout)
 
 
-	//创建控制通道
-	ctx := make(chan int)
+	//超时时间设定
+	deadline := time.Now().Add(time.Duration(timeout)*time.Second)
 
 	go func() {
 		time.Sleep(time.Duration(timeout) * time.Second)
 		Log(Now(), "用户监听超时：port=", port)
-
-		//发送超时指令
-		close(ctx)
 
 		//关闭端口监听
 		listener.Close()
@@ -180,7 +177,7 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	//启动异步监听
-	go listenCustomer(ctx, listener, port, ip, userId)
+	go listenCustomer(deadline, listener, port, ip, userId)
 
 	Users.Store(port, token)
 
@@ -329,12 +326,12 @@ func heartbeat(conn net.Conn) (err error) {
 
 //用户端连接处理===========================================================================
 //用户监听
-func listenCustomer(ctx chan int, listener *net.TCPListener, port int, ip string, userId string) {
+func listenCustomer(deadline time.Time, listener *net.TCPListener, port int, ip string, userId string) {
 	for{
 			conn,err := listener.AcceptTCP()
 			if err != nil {
 				Log(Now(), "用户监听超时关闭：userId=", userId, "port=", port)
-				continue
+				return
 			}
 
 			addr  := conn.RemoteAddr().String()
@@ -349,13 +346,14 @@ func listenCustomer(ctx chan int, listener *net.TCPListener, port int, ip string
 
 			conn.SetKeepAlive(true)
 			conn.SetKeepAlivePeriod(5*time.Second)
+			conn.SetReadDeadline(deadline)
 
-			go handleCustomer(ctx, conn, port, userId)
+			go handleCustomer(conn, port, userId)
 	}
 }
 
 //用户握手
-func handleCustomer(ctx chan int, conn net.Conn, port int, userId string) {
+func handleCustomer(conn net.Conn, port int, userId string) {
 	reader      := bufio.NewReader(conn)
 	version, _  := reader.ReadByte()
 	nmethods, _ := reader.ReadByte()
@@ -410,12 +408,12 @@ func handleCustomer(ctx chan int, conn net.Conn, port int, userId string) {
 	Log(Now(), "用户<<---->>设备：userId=", userId, "port=", port, "user=", conn.RemoteAddr().String(), "token=", token, "device=", device.RemoteAddr().String())
 
 	//向设备转发原始请求
-    go CopyUserToMobile(ctx, conn, device, userId)
-	go CopyMobileToUser(ctx, device, conn, userId)
+    go CopyUserToMobile(conn, device, userId)
+	go CopyMobileToUser(device, conn, userId)
 }
 
 //转发用户数据到设备
-func CopyUserToMobile(ctx chan int, input net.Conn, output net.Conn, userId string) {
+func CopyUserToMobile(input net.Conn, output net.Conn, userId string) {
 	defer output.Close()
 
 	user    := input.RemoteAddr().String()
@@ -429,14 +427,12 @@ func CopyUserToMobile(ctx chan int, input net.Conn, output net.Conn, userId stri
 			count, err := input.Read(buf)
 			Log(Now(), "用户主动检查：userId=", userId, "user=", user, "device=", device, "traffic_up=", traffic)
 			if err != nil {
-				if err == io.EOF {
-					if count > 0 {
-						traffic += count
-						output.Write(buf[:count])
-					}
-
-					Log(Now(), "用户主动断开：userId=", userId, "user=", user, "device=", device, "traffic_up=", traffic)
+				if err == io.EOF && count > 0 {
+					traffic += count
+					output.Write(buf[:count])
 				}
+
+				Log(Now(), "用户主动断开：userId=", userId, "user=", user, "device=", device, "err=", err, "traffic_up=", traffic)
 
 				break
 			}
@@ -453,7 +449,7 @@ func CopyUserToMobile(ctx chan int, input net.Conn, output net.Conn, userId stri
 }
 
 //转发设备数据到用户
-func CopyMobileToUser(ctx chan int, input net.Conn, output net.Conn, userId string) {
+func CopyMobileToUser(input net.Conn, output net.Conn, userId string) {
 	defer output.Close()
 
 	user    := output.RemoteAddr().String()
@@ -467,14 +463,12 @@ func CopyMobileToUser(ctx chan int, input net.Conn, output net.Conn, userId stri
 			count, err := input.Read(buf)
 			Log(Now(), "设备主动检查：userId=", userId, "device=", device, "user=", user,  "traffic_down=", traffic)
 			if err != nil {
-				if err == io.EOF {
-					if count > 0 {
-						traffic += count
-						output.Write(buf[:count])
-					}
-
-					Log(Now(), "设备主动断开：userId=", userId, "device=", device, "user=", user,  "traffic_down=", traffic)
+				if err == io.EOF && count > 0 {
+					traffic += count
+					output.Write(buf[:count])
 				}
+
+				Log(Now(), "设备主动断开：userId=", userId, "device=", device, "user=", user,  "err=", err, "traffic_down=", traffic)
 
 				break
 			}
