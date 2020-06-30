@@ -179,9 +179,8 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 	//启动异步监听
 	go listenCustomer(deadline, listener, port, ip, userId)
 
+	//存储端口到设备token映射
 	Users.Store(port, token)
-
-	//Log(Now(), "统计-用户数：", len(Users))
 
 	//返回结果
 	w.Write(Res(200, "Success", port))
@@ -407,8 +406,10 @@ func handleCustomer(conn net.Conn, port int, userId string) {
 
 	Log(Now(), "用户<<---->>设备：userId=", userId, "port=", port, "user=", conn.RemoteAddr().String(), "token=", token, "device=", device.RemoteAddr().String())
 
-	//向设备转发原始请求
+	//转发用户请求到设备
     go CopyUserToMobile(conn, device, userId)
+
+    //转发设备请求到用户
 	go CopyMobileToUser(device, conn, userId)
 }
 
@@ -425,7 +426,6 @@ func CopyUserToMobile(input net.Conn, output net.Conn, userId string) {
 
 	for {
 			count, err := input.Read(buf)
-			Log(Now(), "用户主动检查：userId=", userId, "user=", user, "device=", device, "traffic_up=", traffic)
 			if err != nil {
 				if err == io.EOF && count > 0 {
 					traffic += count
