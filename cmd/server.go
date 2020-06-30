@@ -331,33 +331,26 @@ func heartbeat(conn net.Conn) (err error) {
 //用户监听
 func listenCustomer(ctx chan int, listener *net.TCPListener, port int, ip string, userId string) {
 	for{
-		select {
-			case <-ctx:
-						Log(Now(), "用户监听超时退出：userId=", userId, "port=", port)
-						listener.Close()
-						return;
-			default    :
-						conn,err := listener.AcceptTCP()
-						if err != nil {
-							Log(Now(), "用户监听超时关闭：userId=", userId, "port=", port)
-							continue
-						}
+			conn,err := listener.AcceptTCP()
+			if err != nil {
+				Log(Now(), "用户监听超时关闭：userId=", userId, "port=", port)
+				continue
+			}
 
-						addr  := conn.RemoteAddr().String()
-						check := strings.Contains(addr, ip)
-						if check == false && Debug==false {
-							Log(Now(), "用户-不在白名单：userId=", userId, "port=", port, "remote=", addr, "ip=", ip)
-							conn.Close()
-							continue
-						}
+			addr  := conn.RemoteAddr().String()
+			check := strings.Contains(addr, ip)
+			if check == false && Debug==false {
+				Log(Now(), "用户-不在白名单：userId=", userId, "port=", port, "remote=", addr, "ip=", ip)
+				conn.Close()
+				continue
+			}
 
-						Log(Now(), "用户-在白名单：userId=", userId, "port=", port, "remote=", addr, "ip=", ip)
+			Log(Now(), "用户-在白名单：userId=", userId, "port=", port, "remote=", addr, "ip=", ip)
 
-						conn.SetKeepAlive(true)
-						conn.SetKeepAlivePeriod(5*time.Second)
+			conn.SetKeepAlive(true)
+			conn.SetKeepAlivePeriod(5*time.Second)
 
-						go handleCustomer(ctx, conn, port, userId)
-		}
+			go handleCustomer(ctx, conn, port, userId)
 	}
 }
 
@@ -433,37 +426,29 @@ func CopyUserToMobile(ctx chan int, input net.Conn, output net.Conn, userId stri
 	defer proxy.Leaky.Put(buf)
 
 	for {
-		select {
-			case <-ctx:
-						Log(Now(), "用户转发到设备超时退出：userId=", userId, "user=", user, "device=", device, "traffic_up=", traffic)
-						input.Close()
-						output.Close()
-						return;
-			default    :
-						count, err := input.Read(buf)
-						if err != nil {
-							if err == io.EOF && count > 0 {
-								traffic += count
-								output.Write(buf[:count])
-							}
+			count, err := input.Read(buf)
+			Log(Now(), "用户主动检查：userId=", userId, "user=", user, "device=", device, "traffic_up=", traffic)
+			if err != nil {
+				if err == io.EOF {
+					if count > 0 {
+						traffic += count
+						output.Write(buf[:count])
+					}
 
-							if err == io.EOF  && count == 0 {
-								Log(Now(), "用户主动断开：userId=", userId, "user=", user, "device=", device, "traffic_up=", traffic)
-								return
-							}
+					Log(Now(), "用户主动断开：userId=", userId, "user=", user, "device=", device, "traffic_up=", traffic)
+				}
 
-							break
-						}
+				break
+			}
 
-						if count > 0 {
-							traffic += count
-							_, err := output.Write(buf[:count])
-							if err != nil {
-								Log(Now(), "设备被动断开： userId=", userId, "user=", user, "device=", device, "traffic_up=", traffic)
-								return
-							}
-						}
-		}
+			if count > 0 {
+				traffic += count
+				_, err := output.Write(buf[:count])
+				if err != nil {
+					Log(Now(), "设备被动断开： userId=", userId, "user=", user, "device=", device, "traffic_up=", traffic)
+					break
+				}
+			}
 	}
 }
 
@@ -479,38 +464,29 @@ func CopyMobileToUser(ctx chan int, input net.Conn, output net.Conn, userId stri
 	defer proxy.Leaky.Put(buf)
 
 	for {
-		select {
-			case <-ctx:
-						Log(Now(), "设备转发到用户超时退出：userId=", userId, "device=", device, "user=", user,  "traffic_down=", traffic)
-						input.Close()
-						output.Close()
-						return
-			default    :
+			count, err := input.Read(buf)
+			Log(Now(), "设备主动检查：userId=", userId, "device=", device, "user=", user,  "traffic_down=", traffic)
+			if err != nil {
+				if err == io.EOF {
+					if count > 0 {
+						traffic += count
+						output.Write(buf[:count])
+					}
 
-						count, err := input.Read(buf)
-						if err != nil {
-							if err == io.EOF && count > 0 {
-								traffic += count
-								output.Write(buf[:count])
-							}
+					Log(Now(), "设备主动断开：userId=", userId, "device=", device, "user=", user,  "traffic_down=", traffic)
+				}
 
-							if err == io.EOF  && count == 0 {
-								Log(Now(), "设备主动断开：userId=", userId, "device=", device, "user=", user,  "traffic_down=", traffic)
-								return
-							}
+				break
+			}
 
-							break
-						}
-
-						if count > 0 {
-							traffic += count
-							_, err := output.Write(buf[:count])
-							if err != nil {
-								Log(Now(), "用户被动断开：userId=", userId, "device=", device, "user=", user,  "traffic_down=", traffic)
-								return
-							}
-						}
-		}
+			if count > 0 {
+				traffic += count
+				_, err := output.Write(buf[:count])
+				if err != nil {
+					Log(Now(), "用户被动断开：userId=", userId, "device=", device, "user=", user,  "traffic_down=", traffic)
+					break
+				}
+			}
 	}
 }
 
