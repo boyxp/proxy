@@ -1,7 +1,6 @@
 package main
 
 import "flag"
-//import "runtime"
 import "fmt"
 import "net/http"
 import "encoding/json"
@@ -11,7 +10,6 @@ import "bufio"
 import "io"
 import "time"
 import "proxy"
-//import "context"
 import "syscall"
 import "errors"
 import "encoding/base64"
@@ -23,20 +21,24 @@ var Debug bool
 var Devices sync.Map
 var Users sync.Map
 var DPort string
+var PoolCap int
 
 func main() {
 	//处理传入参数
 	devicePort  := flag.String("dport", "8888", "设备连接端口")
 	commandPort := flag.String("cport", "8080", "指令接收端口")
+	tcpCap      := flag.Int("pcap", 200, "连接池容量")
 	debug       := flag.Bool("debug", false, "调试模式")
 	flag.Parse()
 
-	Debug = *debug
-	DPort = *devicePort
+	Debug   = *debug
+	DPort   = *devicePort
+	PoolCap = *tcpCap
 
     Log(Now(), "设备端口：", *devicePort)
     Log(Now(), "指令端口：", *commandPort)
     Log(Now(), "调试模式：", *debug)
+    Log(Now(), "连接容量：", *tcpCap)
 
 	//runtime.GOMAXPROCS(4)
 
@@ -56,10 +58,10 @@ func main() {
 //指令处理==============================================================================
 //响应结构体
 type Resp struct {
-	Errno int   `json:"errno"`
-	Msg  string `json:"msg"`
+	Errno int    `json:"errno"`
+	Msg   string `json:"msg"`
 	CPort int    `json:"c_port"`
-	DPort string    `json:"d_port"`
+	DPort string `json:"d_port"`
 }
 
 //指令处理
@@ -136,13 +138,12 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 
 	//创建连接池
 	pool := proxy.TcpPool{}
-	pool.Init(500)
+	pool.Init(PoolCap)
 	Devices.Store(token, pool)
 	Log(Now(), "创建连接池：token=", token, "userId=", userId, "c_port=", port, "c_ip=", ip, "timeout=", timeout)
 
 
-	//创建上下文
-	//ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
+	//创建控制通道
 	ctx := make(chan int)
 
 	go func() {
@@ -279,10 +280,17 @@ func handleMobile(conn net.Conn) {
 
 	ele , _ := Devices.Load(token)
 	pool    := ele.(proxy.TcpPool)
-	pool.Put(conn)
-	Devices.Store(token, pool)
+	len     := pool.Len()
+	Log(Now(), "设备：token=", token, "remote=", remote, "len=", len, "cap=", PoolCap)
+	if len >= PoolCap {
+		Log(Now(), "设备-连接池已满：token=", token, "remote=", remote, "len=", len, "cap=", PoolCap)
+		conn.Close()
+		return
+	}
 
-	Log(Now(), "统计：设备连接数=", pool.Len())
+	pool.Put(conn)
+
+	Log(Now(), "统计：设备连接数=", len)
 
 	if Debug == true {
 		//go heartbeat(conn)
