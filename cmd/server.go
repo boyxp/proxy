@@ -140,6 +140,7 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 	pool := proxy.TcpPool{}
 	pool.Init(PoolCap)
 	Devices.Store(token, pool)
+
 	Log(Now(), "创建连接池：token=", token, "userId=", userId, "c_port=", port, "c_ip=", ip, "timeout=", timeout)
 
 
@@ -267,58 +268,26 @@ func handleMobile(conn net.Conn) {
 	Log(Now(), "设备-握手：token=", token, "remote=", remote, "version=", version, "len=", length)
 
 	//判断设备连接池是否存在,不存在则断开
-	if _, ok := Devices.Load(token); !ok {
+	ele, ok := Devices.Load(token)
+	if !ok {
 		Log(Now(), "设备-连接池不存在：token=", token, "remote=", remote)
 		conn.Close()
 		return
 	}
 
-	ele , _ := Devices.Load(token)
+	//插入连接池
 	pool    := ele.(proxy.TcpPool)
-	len     := pool.Len()
-	Log(Now(), "设备：token=", token, "remote=", remote, "len=", len, "cap=", PoolCap)
-	if len >= PoolCap {
-		Log(Now(), "设备-连接池已满：token=", token, "remote=", remote, "len=", len, "cap=", PoolCap)
+	_, err  := pool.Put(conn)
+
+	if err != nil {
+		Log(Now(), "设备-连接池已满：token=", token, "remote=", remote, "cap=", PoolCap)
 		conn.Close()
 		return
 	}
 
-	pool.Put(conn)
-
-	Log(Now(), "统计：设备连接数=", pool.Len())
-
-	if Debug == true {
-		//go heartbeat(conn)
-	}
+	Log(Now(), "设备：token=", token, "remote=", remote, "len=", pool.Len(), "cap=", PoolCap)
 }
 
-//设备心跳
-func heartbeat(conn net.Conn) (err error) {
-	defer Close(conn)
-
-	buf := make([]byte, 8192)
-	for {
-		count, err := conn.Read(buf)
-		if err != nil {
-			if err == io.EOF && count > 0 {
-				Log(buf[:count])
-			}
-
-			if err == io.EOF && count == 0 {
-				Log("对方连接关闭")
-			}
-
-			break
-		}
-
-		if count > 0 {
-			conn.SetReadDeadline(time.Now().Add(time.Duration(10)*time.Second))
-			Log("设备心跳：", conn.RemoteAddr().String(), string(buf[:count]))
-			conn.Write([]byte("pong"))
-		}
-	}
-	return
-}
 
 
 
