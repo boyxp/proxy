@@ -15,7 +15,7 @@ import "errors"
 import "encoding/base64"
 import "strings"
 import "sync"
-import _ "net/http/pprof"
+//import _ "net/http/pprof"
 
 var Debug bool
 var Devices sync.Map
