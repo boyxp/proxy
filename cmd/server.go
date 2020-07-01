@@ -237,7 +237,6 @@ func listenMobile(port string) {
 
 //设备处理
 func handleMobile(conn net.Conn) {
-
 	remote := conn.RemoteAddr().String()
 
 	Log(Now(), "设备-连接：remote=", remote)
@@ -461,7 +460,6 @@ func CopyMobileToUser(input net.Conn, output net.Conn, userId string) {
 
 	for {
 			count, err := input.Read(buf)
-			Log(Now(), "设备主动检查：userId=", userId, "device=", device, "user=", user,  "traffic_down=", traffic)
 			if err != nil {
 				if err == io.EOF && count > 0 {
 					traffic += count
