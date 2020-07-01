@@ -146,7 +146,6 @@ func CopyLocalToRemote(input net.Conn, output net.Conn, seq int) {
 
 				if err == io.EOF  && count == 0 {
 					Log(Now(), "浏览器主动断开：seq=", seq, "remote=", remote, "traffic_up=", traffic)
-					pool <- 1
 					return
 				}
 
