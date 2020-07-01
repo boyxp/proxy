@@ -285,7 +285,7 @@ func handleMobile(conn net.Conn) {
 
 	pool.Put(conn)
 
-	Log(Now(), "统计：设备连接数=", len)
+	Log(Now(), "统计：设备连接数=", pool.Len())
 
 	if Debug == true {
 		//go heartbeat(conn)
