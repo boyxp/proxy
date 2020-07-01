@@ -24,13 +24,12 @@ func (this *TcpPool) Get() (conn net.Conn, err error) {
 }
 
 func (this *TcpPool) Put(conn net.Conn) (res bool, err error) {
-	if len(this.pool) >= this.max {
-		err = errors.New("连接池已满")
-		return
+	select {
+		case this.pool <- conn :
+								return true, nil
+		default                :
+								return false,  errors.New("连接池已满")
 	}
-
-	this.pool<- conn
-	return true, nil
 }
 
 func (this *TcpPool) Len() int {
