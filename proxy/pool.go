@@ -5,12 +5,10 @@ import "errors"
 
 type TcpPool struct {
 	pool chan net.Conn
-	max int
 }
 
-func (this *TcpPool) Init(max int) {
-	this.pool  = make(chan net.Conn, max)
-	this.max   = max
+func (this *TcpPool) Init(cap int) {
+	this.pool = make(chan net.Conn, cap)
 }
 
 func (this *TcpPool) Get() (conn net.Conn, err error) {
@@ -26,10 +24,12 @@ func (this *TcpPool) Get() (conn net.Conn, err error) {
 func (this *TcpPool) Put(conn net.Conn) (res bool, err error) {
 	select {
 		case this.pool <- conn :
-								return true, nil
+								res = true
 		default                :
-								return false,  errors.New("连接池已满")
+								err = errors.New("连接池已满")
 	}
+
+	return
 }
 
 func (this *TcpPool) Len() int {
