@@ -14,12 +14,12 @@ func (this *TcpPool) Init(max int) {
 }
 
 func (this *TcpPool) Get() (conn net.Conn, err error) {
-	if len(this.pool) < 1 {
-		err = errors.New("连接池没有可用TCP连接")
-		return
+	select {
+		case conn = <-this.pool :
+		default 				:
+								err = errors.New("连接池没有可用TCP连接")
 	}
 
-	conn = <-this.pool
 	return
 }
 
