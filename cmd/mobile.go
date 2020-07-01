@@ -15,7 +15,7 @@ func main() {
 	//处理传入参数
 	ip    := flag.String("ip", "127.0.0.1", "代理服务器IP地址")
 	port  := flag.Int("port", 8888, "代理服务器端口")
-	token := flag.String("token", "aaaabbbbccccdddd", "设备标识")
+	token := flag.String("token", "test", "设备标识")
 	debug := flag.Bool("debug", false, "调试模式")
 	num   := flag.Int("num", 10, "备用连接数")
 	flag.Parse()
@@ -28,22 +28,18 @@ func main() {
 	Log("服务器IP：", *ip)
 	Log("服务器端口：", *port)
 
-	//默认创建10个连接
-	for i:=0; i< *num; i++ {
-		pool <- i
-		fmt.Println(i)
+	//默认创建等于备用总量
+	var i int = 0
+	for ;i< *num; i++ {
+		Log(Now(), "默认连接：seq=", i)
+		go connect(*ip, *port, *token, *debug, i)
 	}
 
-	var i int = 0
 	for {
 		select {
 			case <-pool :
-				if len(pool) > *num {
-					continue
-				}
-
 				i++
-				Log(Now(), "创建连接：seq=", i)
+				Log(Now(), "补充连接：seq=", i)
 				go connect(*ip, *port, *token, *debug, i)
 		}
 	}
@@ -78,7 +74,6 @@ func connect(ip string, port int, token string, debug bool, seq int) {
 	if debug {
 		heartbeat(conn)
 	} else {
-		//wait(conn, seq)
 		run(conn, seq)
 	}
 }
@@ -123,6 +118,7 @@ func run(client net.Conn, seq int) {
 	defer server.Close()
 	client.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
 
+	//补充新连接
 	pool <- 1
 
 	go CopyLocalToRemote(client, server, seq)
@@ -203,33 +199,6 @@ func CopyRemoteToLocal(input net.Conn, output net.Conn, seq int) {
 					return
 				}
 			}
-	}
-}
-
-
-func wait(conn net.Conn, seq int) {
-	defer close(conn)
-
-	buf := make([]byte, 8192)
-	for {
-		count, err := conn.Read(buf)
-		if err != nil {
-			if err == io.EOF && count > 0 {
-				Log(Now(), "服务器报错：seq=", seq, "res=", buf[:count])
-			}
-
-			if err == io.EOF  && count == 0 {
-				Log(Now(), "用户连接关闭：seq=", seq)
-			}
-
-			break
-		}
-
-		if count > 0 {
-			Log(Now(), "用户请求：seq=", seq, "data=", string(buf[:count]))
-			conn.Write([]byte("recv"))
-			Log(Now(), "请求响应：seq=", seq)
-		}
 	}
 }
 
