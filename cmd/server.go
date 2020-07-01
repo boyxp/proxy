@@ -110,6 +110,13 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 
    	//==如果token已经创建过连接池则报错
 
+   	//允许自动取IP作为白名单IP
+   	if ip == "auto" {
+   		remote, _, _ := net.SplitHostPort(r.RemoteAddr)
+   		ip = remote
+   	}
+
+
    	//创建监听，随机分配端口
    	var rawIP string
    	if Debug==true {
