@@ -32,7 +32,7 @@ func main() {
 	var i int = 0
 	for ;i< *num; i++ {
 		Log(Now(), "默认连接：seq=", i)
-		go connect(*ip, *port, *token, *debug, i)
+		connect(*ip, *port, *token, *debug, i)
 	}
 
 	for {
@@ -74,7 +74,7 @@ func connect(ip string, port int, token string, debug bool, seq int) {
 	if debug {
 		heartbeat(conn)
 	} else {
-		run(conn, seq)
+		go run(conn, seq)
 	}
 }
 
