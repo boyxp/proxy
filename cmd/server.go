@@ -166,6 +166,10 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 
 		//清理连接池残留连接
 		ele , _ := Devices.Load(token)
+		if ele == nil {
+			return
+		}
+
 		pool := ele.(proxy.TcpPool)
 		var device net.Conn
 		var len = pool.Len()
